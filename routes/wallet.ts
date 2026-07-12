@@ -18,8 +18,20 @@ export function getWalletBalance () {
   }
 }
 
+const MAX_TOPUP = 1000
+
 export function addWalletBalance () {
   return async (req: Request, res: Response, next: NextFunction) => {
+    const amount = req.body.balance
+
+    if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_TOPUP) {
+      res.status(400).json({
+        status: 'error',
+        message: `Top-up amount must be a positive integer no greater than ${MAX_TOPUP}.`
+      })
+      return
+    }
+
     const cardId = req.body.paymentId
     const card = cardId ? await CardModel.findOne({ where: { id: cardId, UserId: req.body.UserId } }) : null
     if (card != null) {

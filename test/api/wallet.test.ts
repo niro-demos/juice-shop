@@ -74,6 +74,49 @@ void describe('/api/Wallets', () => {
       .send({ balance: 10 })
     assert.equal(res.status, 402)
   })
+
+  void it('PUT wallet rejects an unbounded top-up amount and leaves the balance unchanged', async () => {
+    const before = await request(app)
+      .get('/rest/wallet/balance')
+      .set(authHeader)
+
+    const res = await request(app)
+      .put('/rest/wallet/balance')
+      .set(authHeader)
+      .send({ balance: 1000000, paymentId: 2 })
+    assert.equal(res.status, 400)
+
+    const after = await request(app)
+      .get('/rest/wallet/balance')
+      .set(authHeader)
+    assert.equal(after.body.data, before.body.data)
+  })
+
+  void it('PUT wallet rejects a negative top-up amount and leaves the balance unchanged', async () => {
+    const before = await request(app)
+      .get('/rest/wallet/balance')
+      .set(authHeader)
+
+    const res = await request(app)
+      .put('/rest/wallet/balance')
+      .set(authHeader)
+      .send({ balance: -1000, paymentId: 2 })
+    assert.equal(res.status, 400)
+
+    const after = await request(app)
+      .get('/rest/wallet/balance')
+      .set(authHeader)
+    assert.equal(after.body.data, before.body.data)
+  })
+
+  void it('PUT wallet rejects a non-integer top-up amount', async () => {
+    const res = await request(app)
+      .put('/rest/wallet/balance')
+      .set(authHeader)
+      .send({ balance: 10.5, paymentId: 2 })
+    assert.equal(res.status, 400)
+  })
+
   void it('GET wallet balance for user without a wallet returns 404', async () => {
     const email = `newuser${Date.now()}@juice-sh.op`
     const userRes = await request(app)
