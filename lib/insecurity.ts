@@ -31,11 +31,14 @@ interface ResponseWithUser {
 interface IAuthenticatedUsers {
   tokenMap: Record<string, ResponseWithUser>
   idMap: Record<string, string>
+  revokedTokens: Set<string>
   put: (token: string, user: ResponseWithUser) => void
   get: (token?: string) => ResponseWithUser | undefined
   tokenOf: (user: UserModel) => string | undefined
   from: (req: Request) => ResponseWithUser | undefined
   updateFrom: (req: Request, user: ResponseWithUser) => any
+  revoke: (token?: string) => void
+  isRevoked: (token?: string) => boolean
 }
 
 export const hash = (data: string) => crypto.createHash('md5').update(data).digest('hex')
@@ -49,7 +52,16 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
+const rejectRevokedToken = () => (req: Request, res: Response, next: NextFunction) => {
+  const token = utils.jwtFrom(req)
+  if (authenticatedUsers.isRevoked(token)) {
+    res.status(401).json({ status: 'error', message: 'jwt revoked' })
+    return
+  }
+  next()
+}
+
+export const isAuthorized = () => [expressJwt(({ secret: publicKey }) as any), rejectRevokedToken()]
 export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
 export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
 export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
@@ -70,6 +82,7 @@ export const sanitizeSecure = (html: string): string => {
 export const authenticatedUsers: IAuthenticatedUsers = {
   tokenMap: {},
   idMap: {},
+  revokedTokens: new Set<string>(),
   put: function (token: string, user: ResponseWithUser) {
     this.tokenMap[token] = user
     this.idMap[user.data.id] = token
@@ -87,6 +100,18 @@ export const authenticatedUsers: IAuthenticatedUsers = {
   updateFrom: function (req: Request, user: ResponseWithUser) {
     const token = utils.jwtFrom(req)
     this.put(token, user)
+  },
+  // Evicts a token so it is rejected by both the tokenMap-backed checks and
+  // isAuthorized() (via rejectRevokedToken), even though its JWT signature
+  // remains cryptographically valid until it naturally expires.
+  revoke: function (token?: string) {
+    if (!token) return
+    const unquoted = utils.unquote(token)
+    delete this.tokenMap[unquoted]
+    this.revokedTokens.add(unquoted)
+  },
+  isRevoked: function (token?: string) {
+    return token ? this.revokedTokens.has(utils.unquote(token)) : false
   }
 }
 
@@ -185,7 +210,7 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
+  if (token && !authenticatedUsers.isRevoked(token) && authenticatedUsers.get(token) === undefined) {
     jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)

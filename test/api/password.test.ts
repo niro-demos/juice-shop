@@ -9,7 +9,7 @@ import request from 'supertest'
 import type { Express } from 'express'
 import config from 'config'
 import { createTestApp } from './helpers/setup'
-import { login } from './helpers/auth'
+import { login, register } from './helpers/auth'
 
 let app: Express
 
@@ -100,6 +100,41 @@ void describe('/rest/user/change-password', () => {
       .set({ Authorization: 'Bearer ' + token })
 
     assert.equal(res.status, 200)
+  })
+
+  void it('invalidates the previous session token once the password has been changed, so a stolen token stops working', async () => {
+    const email = `stolen-token-${Date.now()}@test.com`
+    const initialPassword = 'InitialPass123!'
+    const newPassword = 'ChangedPass456!'
+
+    await register(app, { email, password: initialPassword })
+
+    const { token: stolenToken } = await login(app, { email, password: initialPassword })
+
+    // Baseline: the freshly issued token is valid before any password change.
+    const before = await request(app)
+      .get('/rest/user/authentication-details')
+      .set({ Authorization: 'Bearer ' + stolenToken })
+    assert.equal(before.status, 200)
+
+    // Positive control: a garbage token is always rejected, proving the
+    // environment itself is healthy and the assertions below are meaningful.
+    const control = await request(app)
+      .get('/rest/user/authentication-details')
+      .set({ Authorization: 'Bearer garbage.invalid.token' })
+    assert.equal(control.status, 401)
+
+    // The account owner changes their password using the same (stolen) token.
+    const changeRes = await request(app)
+      .get(`/rest/user/change-password?current=${initialPassword}&new=${newPassword}&repeat=${newPassword}`)
+      .set({ Authorization: 'Bearer ' + stolenToken })
+    assert.equal(changeRes.status, 200)
+
+    // The old token must no longer grant access after the password change.
+    const after = await request(app)
+      .get('/rest/user/authentication-details')
+      .set({ Authorization: 'Bearer ' + stolenToken })
+    assert.equal(after.status, 401)
   })
 })
 

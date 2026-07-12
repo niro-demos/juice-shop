@@ -49,6 +49,15 @@ export function changePassword () {
       }
 
       await user.update({ password: newPasswordInString })
+
+      // Invalidate the session token that was used to change the password so a
+      // stolen token cannot keep the account compromised after the owner recovers.
+      const oldToken = security.authenticatedUsers.tokenOf(user)
+      if (oldToken) {
+        security.authenticatedUsers.revoke(oldToken)
+        delete security.authenticatedUsers.idMap[user.id]
+      }
+
       challengeUtils.solveIf(
         challenges.changePasswordBenderChallenge,
         () => user.id === 3 && !currentPassword && user.password === security.hash('slurmCl4ssic')
