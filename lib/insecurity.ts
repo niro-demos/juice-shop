@@ -17,8 +17,56 @@ import * as utils from './utils'
 // @ts-expect-error FIXME no typescript definitions for z85 :(
 import * as z85 from 'z85'
 
-export const publicKey = fs ? fs.readFileSync('encryptionkeys/jwt.pub', 'utf8') : 'placeholder-public-key'
-const privateKey = '-----BEGIN RSA PRIVATE KEY-----\r\nMIICXAIBAAKBgQDNwqLEe9wgTXCbC7+RPdDbBbeqjdbs4kOPOIGzqLpXvJXlxxW8iMz0EaM4BKUqYsIa+ndv3NAn2RxCd5ubVdJJcX43zO6Ko0TFEZx/65gY3BE0O6syCEmUP4qbSd6exou/F+WTISzbQ5FBVPVmhnYhG/kpwt/cIxK5iUn5hm+4tQIDAQABAoGBAI+8xiPoOrA+KMnG/T4jJsG6TsHQcDHvJi7o1IKC/hnIXha0atTX5AUkRRce95qSfvKFweXdJXSQ0JMGJyfuXgU6dI0TcseFRfewXAa/ssxAC+iUVR6KUMh1PE2wXLitfeI6JLvVtrBYswm2I7CtY0q8n5AGimHWVXJPLfGV7m0BAkEA+fqFt2LXbLtyg6wZyxMA/cnmt5Nt3U2dAu77MzFJvibANUNHE4HPLZxjGNXN+a6m0K6TD4kDdh5HfUYLWWRBYQJBANK3carmulBwqzcDBjsJ0YrIONBpCAsXxk8idXb8jL9aNIg15Wumm2enqqObahDHB5jnGOLmbasizvSVqypfM9UCQCQl8xIqy+YgURXzXCN+kwUgHinrutZms87Jyi+D8Br8NY0+Nlf+zHvXAomD2W5CsEK7C+8SLBr3k/TsnRWHJuECQHFE9RA2OP8WoaLPuGCyFXaxzICThSRZYluVnWkZtxsBhW2W8z1b8PvWUE7kMy7TnkzeJS2LSnaNHoyxi7IaPQUCQCwWU4U+v4lD7uYBw00Ga/xt+7+UqFPlPVdz1yyr4q24Zxaw0LgmuEvgU5dycq8N7JxjTubX0MIRR+G9fmDBBl8=\r\n-----END RSA PRIVATE KEY-----'
+// Loads a private key that was provisioned outside the source tree, either
+// inline (JWT_PRIVATE_KEY, e.g. injected by a secret manager) or as a path to
+// a mounted secret file (JWT_PRIVATE_KEY_FILE). Returns undefined if neither
+// is configured.
+function loadConfiguredPrivateKey (): string | undefined {
+  const inlineKey = process.env.JWT_PRIVATE_KEY
+  if (inlineKey?.trim()) {
+    return inlineKey.replace(/\\n/g, '\n')
+  }
+  const keyFile = process.env.JWT_PRIVATE_KEY_FILE
+  if (keyFile) {
+    try {
+      return fs.readFileSync(keyFile, 'utf8')
+    } catch (err) {
+      throw new Error(`JWT_PRIVATE_KEY_FILE is set to '${keyFile}' but the key could not be read: ${(err as Error).message}`)
+    }
+  }
+  return undefined
+}
+
+function resolveJwtSigningKeys (): { privateKey: string, publicKey: string } {
+  const configuredPrivateKey = loadConfiguredPrivateKey()
+  if (configuredPrivateKey) {
+    const derivedPublicKey = crypto.createPublicKey(configuredPrivateKey).export({ type: 'pkcs1', format: 'pem' }).toString()
+    return { privateKey: configuredPrivateKey, publicKey: derivedPublicKey }
+  }
+  // No key was provisioned via JWT_PRIVATE_KEY / JWT_PRIVATE_KEY_FILE: generate a
+  // fresh, instance-unique RSA-2048 keypair at startup instead of falling back to
+  // a key baked into the source tree. A hardcoded private key here was previously
+  // extractable by anyone with source access, letting them forge admin tokens
+  // against every default install. Restarting without a configured key invalidates
+  // previously issued tokens by design; deployments that need a stable key across
+  // restarts or multiple instances should set JWT_PRIVATE_KEY (or
+  // JWT_PRIVATE_KEY_FILE, e.g. pointing at a mounted secret).
+  const generatedKeyPair = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    publicKeyEncoding: { type: 'pkcs1', format: 'pem' }
+  })
+  return { privateKey: generatedKeyPair.privateKey, publicKey: generatedKeyPair.publicKey }
+}
+
+const { privateKey, publicKey: resolvedPublicKey } = resolveJwtSigningKeys()
+
+// The public half of the signing key is not sensitive; it is deliberately
+// discoverable via the /encryptionkeys/jwt.pub route (see routes/keyServer.ts,
+// which serves this exported value rather than reading encryptionkeys/jwt.pub
+// from disk) so it always matches whichever key is actually signing tokens in
+// this process.
+export const publicKey = resolvedPublicKey
 
 interface ResponseWithUser {
   status?: string

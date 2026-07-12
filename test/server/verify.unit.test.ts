@@ -6,6 +6,7 @@
 import { describe, it, beforeEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import config from 'config'
+import jwt from 'jsonwebtoken'
 import { challenges, products, setRetrieveBlueprintChallengeFile } from '../../data/datacache'
 import type { Product, Challenge } from '@juice-shop/data/types'
 import type { Product as ProductConfig } from '../../lib/config.schema'
@@ -277,8 +278,13 @@ void describe('verify', () => {
       assert.equal(challenges.jwtUnsignedChallenge.solved, false)
     })
 
+    // The JWT signing key is now provisioned at runtime (env var, mounted secret, or a
+    // freshly generated instance keypair) rather than being a fixed value baked into the
+    // source tree, so these forged tokens are built dynamically against the live public
+    // key instead of being fixed base64 fixtures signed against a historical key.
     void it('"jwtForgedChallenge" is solved when forged token HMAC-signed with public RSA-key has email rsa_lord@juice-sh.op in the payload', { skip: isWindows() ? 'not supported on Windows' : false }, () => {
-      req.headers = { authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRhIjp7ImVtYWlsIjoicnNhX2xvcmRAanVpY2Utc2gub3AifSwiaWF0IjoxNTgyMjIxNTc1fQ.ycFwtqh4ht4Pq9K5rhiPPY256F9YCTIecd4FHFuSEAg' }
+      const forgedToken = jwt.sign({ data: { email: 'rsa_lord@juice-sh.op' } }, security.publicKey, { algorithm: 'HS256' })
+      req.headers = { authorization: `Bearer ${forgedToken}` }
 
       verify.jwtChallenges()(req, res, next)
 
@@ -286,7 +292,8 @@ void describe('verify', () => {
     })
 
     void it('"jwtForgedChallenge" is solved when forged token HMAC-signed with public RSA-key has string "rsa_lord@" in the payload', { skip: isWindows() ? 'not supported on Windows' : false }, () => {
-      req.headers = { authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRhIjp7ImVtYWlsIjoicnNhX2xvcmRAIn0sImlhdCI6MTU4MjIyMTY3NX0.50f6VAIQk2Uzpf3sgH-1JVrrTuwudonm2DKn2ec7Tg8' }
+      const forgedToken = jwt.sign({ data: { email: 'rsa_lord@' } }, security.publicKey, { algorithm: 'HS256' })
+      req.headers = { authorization: `Bearer ${forgedToken}` }
 
       verify.jwtChallenges()(req, res, next)
 

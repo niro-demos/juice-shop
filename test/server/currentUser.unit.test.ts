@@ -6,7 +6,7 @@
 import { describe, it, beforeEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { retrieveLoggedInUser } from '../../routes/currentUser'
-import { authenticatedUsers } from '../../lib/insecurity'
+import { authenticatedUsers, authorize } from '../../lib/insecurity'
 import type { UserModel } from '@juice-shop/models/user'
 
 void describe('currentUser', () => {
@@ -28,11 +28,17 @@ void describe('currentUser', () => {
   })
 
   void it('should return ID and email of user belonging to cookie from the request', () => {
-    req.cookies.token = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJkYXRhIjp7ImlkIjoxLCJlbWFpbCI6ImFkbWluQGp1aWNlLXNoLm9wIiwibGFzdExvZ2luSXAiOiIwLjAuMC4wIiwicHJvZmlsZUltYWdlIjoiZGVmYXVsdC5zdmcifSwiaWF0IjoxNTgyMjIyMzY0fQ.CHiFQieZudYlrd1o8Ih-Izv7XY_WZupt8Our-CP9HqsczyEKqrWC7wWguOgVuSGDN_S3mP4FyuEFN8l60aAhVsUbqzFetvJkFwe5nKVhc9dHuen6cujQLMcTlHLKassOSDP41Q-MkKWcUOQu0xUkTMfEq2hPMHpMosDb4benzH0'
+    // The JWT signing key is now provisioned at runtime (env var, mounted secret, or a
+    // freshly generated instance keypair) rather than a fixed value baked into the source
+    // tree, so the token has to be signed dynamically instead of using a fixed fixture
+    // that was signed against a historical key.
+    const userData = { id: 1, email: 'admin@juice-sh.op', lastLoginIp: '0.0.0.0', profileImage: '/assets/public/images/uploads/default.svg' }
+    const token = authorize({ data: userData })
+    req.cookies.token = token
     req.query.callback = undefined
     authenticatedUsers.put(
-      'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJkYXRhIjp7ImlkIjoxLCJlbWFpbCI6ImFkbWluQGp1aWNlLXNoLm9wIiwibGFzdExvZ2luSXAiOiIwLjAuMC4wIiwicHJvZmlsZUltYWdlIjoiZGVmYXVsdC5zdmcifSwiaWF0IjoxNTgyMjIyMzY0fQ.CHiFQieZudYlrd1o8Ih-Izv7XY_WZupt8Our-CP9HqsczyEKqrWC7wWguOgVuSGDN_S3mP4FyuEFN8l60aAhVsUbqzFetvJkFwe5nKVhc9dHuen6cujQLMcTlHLKassOSDP41Q-MkKWcUOQu0xUkTMfEq2hPMHpMosDb4benzH0',
-      { data: { id: 1, email: 'admin@juice-sh.op', lastLoginIp: '0.0.0.0', profileImage: '/assets/public/images/uploads/default.svg' } as unknown as UserModel }
+      token,
+      { data: userData as unknown as UserModel }
     )
     retrieveLoggedInUser()(req, res)
 

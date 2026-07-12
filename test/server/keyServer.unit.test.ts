@@ -6,6 +6,7 @@
 import { describe, it, beforeEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { serveKeyFiles } from '../../routes/keyServer'
+import * as security from '../../lib/insecurity'
 
 void describe('keyServer', () => {
   let req: any
@@ -14,7 +15,7 @@ void describe('keyServer', () => {
 
   beforeEach(() => {
     req = { params: { } }
-    res = { sendFile: mock.fn(), status: mock.fn() }
+    res = { sendFile: mock.fn(), status: mock.fn(), type: mock.fn(() => res), send: mock.fn() }
     next = mock.fn()
   })
 
@@ -35,5 +36,15 @@ void describe('keyServer', () => {
     assert.equal(res.sendFile.mock.calls.length, 0)
     assert.equal(next.mock.calls.length, 1)
     assert.ok(next.mock.calls[0].arguments[0] instanceof Error)
+  })
+
+  void it('should serve the live in-memory public key for jwt.pub instead of reading it from disk', () => {
+    req.params.file = 'jwt.pub'
+
+    serveKeyFiles()(req, res, next)
+
+    assert.equal(res.sendFile.mock.calls.length, 0)
+    assert.equal(res.send.mock.calls.length, 1)
+    assert.equal(res.send.mock.calls[0].arguments[0], security.publicKey)
   })
 })
