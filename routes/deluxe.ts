@@ -45,7 +45,10 @@ export function upgradeToDeluxe () {
           return security.verify(utils.jwtFrom(req)) && req.body.paymentMode !== 'wallet' && req.body.paymentMode !== 'card'
         })
         const userWithStatus = utils.queryResultToJson(updatedUser)
-        const updatedToken = security.authorize(userWithStatus)
+        // Never sign the password hash or totpSecret into the JWT -- its payload is
+        // base64url-encoded, not encrypted, so it would be readable by anyone who
+        // intercepts the token. The full user record is still kept server-side below.
+        const updatedToken = security.authorize({ ...userWithStatus, data: security.omitSensitiveUserFields(userWithStatus.data) })
         security.authenticatedUsers.put(updatedToken, userWithStatus)
         res.status(200).json({ status: 'success', data: { confirmation: 'Congratulations! You are now a deluxe member!', token: updatedToken } })
       } catch (error) {

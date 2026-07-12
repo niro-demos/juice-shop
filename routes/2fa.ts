@@ -39,7 +39,10 @@ export async function verify (req: Request, res: Response) {
 
     const [basket] = await BasketModel.findOrCreate({ where: { UserId: userId } })
 
-    const token = security.authorize(plainUser)
+    // Never sign the password hash or totpSecret into the JWT -- its payload is
+    // base64url-encoded, not encrypted, so it would be readable by anyone who
+    // intercepts the token. The full user record is still kept server-side below.
+    const token = security.authorize({ ...plainUser, data: security.omitSensitiveUserFields(plainUser.data) })
     // @ts-expect-error FIXME set new property for original basket
     plainUser.bid = basket.id // keep track of original basket for challenge solution check
     security.authenticatedUsers.put(token, plainUser)

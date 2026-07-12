@@ -766,8 +766,8 @@
 	"loginAdminChallenge_1.ts": {
 		"added": [],
 		"removed": [
-			17,
-			18
+			20,
+			21
 		]
 	},
 	"loginAdminChallenge_2.ts": {
@@ -785,8 +785,8 @@
 	"loginBenderChallenge_1.ts": {
 		"added": [],
 		"removed": [
-			17,
-			18
+			20,
+			21
 		]
 	},
 	"loginBenderChallenge_2_correct.ts": {
@@ -816,8 +816,8 @@
 	"loginJimChallenge_4.ts": {
 		"added": [],
 		"removed": [
-			17,
-			18
+			20,
+			21
 		]
 	},
 	"nftMintChallenge_1.sol": {

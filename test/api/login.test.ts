@@ -235,6 +235,40 @@ void describe('/rest/user/login', () => {
   })
 })
 
+void describe('/rest/user/login JWT payload', () => {
+  void it('POST login must not embed the password hash or totpSecret in the JWT payload', async () => {
+    const res = await request(app)
+      .post('/rest/user/login')
+      .set({ 'content-type': 'application/json' })
+      .send({
+        email: 'bjoern.kimminich@gmail.com',
+        password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+      })
+
+    assert.equal(res.status, 200)
+    const { token, bid } = res.body.authentication
+    assert.equal(typeof token, 'string')
+
+    // Positive control: the very same token must still authenticate a normal
+    // request, proving a failure below is about payload confidentiality and
+    // not a broken login/auth pipeline.
+    const basketRes = await request(app)
+      .get(`/rest/basket/${bid}`)
+      .set({ Authorization: 'Bearer ' + token })
+    assert.equal(basketRes.status, 200)
+
+    // The actual invariant: decode the JWT payload without any key -- exactly
+    // what a passive observer of network traffic, logs or browser storage
+    // could do -- and confirm it carries no credential material.
+    const payloadSegment = token.split('.')[1]
+    const padded = payloadSegment + '='.repeat((4 - (payloadSegment.length % 4)) % 4)
+    const payload = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'))
+
+    assert.equal(payload.data.password, undefined)
+    assert.equal(payload.data.totpSecret, undefined)
+  })
+})
+
 void describe('/rest/saveLoginIp', () => {
   void it('GET last login IP will be saved as True-Client-IP header value', async () => {
     const loginRes = await request(app)

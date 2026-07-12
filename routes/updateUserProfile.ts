@@ -37,7 +37,10 @@ export function updateUserProfile () {
 
       const savedUser = await user.update({ username: req.body.username })
       const userWithStatus = utils.queryResultToJson(savedUser)
-      const updatedToken = security.authorize(userWithStatus)
+      // Never sign the password hash or totpSecret into the JWT -- its payload is
+      // base64url-encoded, not encrypted, so it would be readable by anyone who
+      // intercepts the token. The full user record is still kept server-side below.
+      const updatedToken = security.authorize({ ...userWithStatus, data: security.omitSensitiveUserFields(userWithStatus.data) })
       security.authenticatedUsers.put(updatedToken, userWithStatus)
       res.cookie('token', updatedToken)
       res.location(process.env.BASE_PATH + '/profile')

@@ -3,7 +3,10 @@ export function login () {
     BasketModel.findOrCreate({ where: { UserId: user.id } })
       .then(([basket]: [BasketModel, boolean]) => {
         const authenticatedUser = { data: user, bid: basket.id } // keep track of original basket
-        const token = security.authorize(authenticatedUser)
+        // Never sign the password hash or totpSecret into the JWT -- its payload is
+        // base64url-encoded, not encrypted, so it would be readable by anyone who
+        // intercepts the token. The full user record is still kept server-side below.
+        const token = security.authorize({ ...authenticatedUser, data: security.omitSensitiveUserFields(user) })
         security.authenticatedUsers.put(token, authenticatedUser)
         res.json({ authentication: { token, bid: basket.id, umail: user.email } })
       }).catch((error: Error) => {

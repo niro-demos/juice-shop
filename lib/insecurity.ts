@@ -55,6 +55,20 @@ export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: 
 export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
+// A JWT payload is base64url-encoded, not encrypted -- anyone who intercepts
+// a token can read it with no key at all. Never sign credential material
+// (password hash, totpSecret, ...) into a token payload; strip it before
+// calling authorize(), while keeping it in the server-side
+// authenticatedUsers store for flows that legitimately need it there.
+const sensitiveUserFields = ['password', 'totpSecret']
+export const omitSensitiveUserFields = <T extends Record<string, any>>(user: T): T => {
+  const plainUser: Record<string, any> = typeof user?.toJSON === 'function' ? user.toJSON() : { ...user }
+  for (const field of sensitiveUserFields) {
+    delete plainUser[field]
+  }
+  return plainUser as T
+}
+
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
 export const sanitizeLegacy = (input = '') => input.replace(/<(?:\w+)\W+?[\w]/gi, '')
 export const sanitizeFilename = (filename: string) => sanitizeFilenameLib(filename)
