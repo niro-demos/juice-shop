@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
 import { createTestApp } from './helpers/setup'
-import { login } from './helpers/auth'
+import { login, register } from './helpers/auth'
 
 let app: Express
 let authHeader: { Authorization: string, 'content-type': string }
@@ -168,6 +168,31 @@ void describe('/api/Addresss/:id', () => {
       .set(authHeader)
       .send({ zipCode: 'NX 10111111' })
     assert.equal(res.status, 400)
+  })
+
+  void it('PUT update address by id from a different user is rejected and leaves the address unchanged', async () => {
+    await register(app, {
+      email: 'address-attacker@test.local',
+      password: 'Attacker1234!'
+    })
+    const { token: attackerToken } = await login(app, {
+      email: 'address-attacker@test.local',
+      password: 'Attacker1234!'
+    })
+
+    const res = await request(app)
+      .put('/api/Addresss/' + addressId)
+      .set({ Authorization: 'Bearer ' + attackerToken, 'content-type': 'application/json' })
+      .send({ fullName: 'HACKED BY ANOTHER USER' })
+    assert.equal(res.status, 400)
+    assert.equal(res.body.status, 'error')
+    assert.equal(res.body.data, 'Malicious activity detected.')
+
+    const stillOwnedByJim = await request(app)
+      .get('/api/Addresss/' + addressId)
+      .set(authHeader)
+    assert.equal(stillOwnedByJim.status, 200)
+    assert.notEqual(stillOwnedByJim.body.data.fullName, 'HACKED BY ANOTHER USER')
   })
 
   void it('DELETE address by id', async () => {

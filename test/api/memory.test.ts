@@ -102,6 +102,21 @@ void describe('/rest/memories', () => {
     assert.equal(res.body.data.UserId, 2)
   })
 
+  void it('GET memories via public API does not expose embedded users\' credentials', async () => {
+    const res = await request(app).get('/rest/memories')
+    assert.equal(res.status, 200)
+    assert.ok(Array.isArray(res.body.data) && res.body.data.length > 0)
+
+    const memoriesWithUser = res.body.data.filter((memory: { User?: unknown }) => memory.User != null)
+    assert.ok(memoriesWithUser.length > 0, 'expected at least one memory with an embedded User for this check to be meaningful')
+
+    for (const memory of memoriesWithUser) {
+      assert.equal(Object.prototype.hasOwnProperty.call(memory.User, 'password'), false)
+      assert.equal(Object.prototype.hasOwnProperty.call(memory.User, 'totpSecret'), false)
+      assert.equal(Object.prototype.hasOwnProperty.call(memory.User, 'deluxeToken'), false)
+    }
+  })
+
   void it('Should not crash the node-js server when sending invalid content like described in CVE-2022-24434', async () => {
     const res = await request(app)
       .post('/rest/memories')

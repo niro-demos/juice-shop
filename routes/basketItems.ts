@@ -67,6 +67,10 @@ export function quantityCheckBeforeBasketItemUpdate () {
     try {
       const item = await BasketItemModel.findOne({ where: { id: req.params.id } })
       const user = security.authenticatedUsers.from(req)
+      if (item != null && item.BasketId != null && Number(item.BasketId) !== Number(user?.bid)) {
+        res.status(403).json({ error: 'Not allowed to modify a basket item that is not your own' })
+        return
+      }
       challengeUtils.solveIf(challenges.basketManipulateChallenge, () => { return user && req.body.BasketId && user.bid != req.body.BasketId }) // eslint-disable-line eqeqeq
       if (req.body.quantity) {
         if (item == null) {
@@ -76,6 +80,26 @@ export function quantityCheckBeforeBasketItemUpdate () {
       } else {
         next()
       }
+    } catch (error) {
+      next(error)
+    }
+  }
+}
+
+export function deleteBasketItem () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const item = await BasketItemModel.findOne({ where: { id: req.params.id } })
+      const user = security.authenticatedUsers.from(req)
+      if (item == null) {
+        res.status(404).json({ error: 'No such item found!' })
+        return
+      }
+      if (!user || Number(user.bid) !== Number(item.BasketId)) {
+        res.status(401).json({ error: 'Unauthorized' })
+        return
+      }
+      next()
     } catch (error) {
       next(error)
     }

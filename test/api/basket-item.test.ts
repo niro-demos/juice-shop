@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
 import { createTestApp } from './helpers/setup'
-import { login } from './helpers/auth'
+import { login, register } from './helpers/auth'
 
 let app: Express
 let authHeader: { Authorization: string, 'content-type': string }
@@ -234,5 +234,60 @@ void describe('/api/BasketItems/:id', () => {
       .set(authHeader)
       .send({ quantity: 1 })
     assert.equal(res.status, 500)
+  })
+})
+
+void describe('BasketItems ownership scoping across different baskets', () => {
+  let attackerAuthHeader: { Authorization: string, 'content-type': string }
+  let victimItemId: number
+
+  before(async () => {
+    await register(app, { email: 'basket-attacker@test.local', password: 'Attacker1234!' })
+    const { token } = await login(app, {
+      email: 'basket-attacker@test.local',
+      password: 'Attacker1234!'
+    })
+    attackerAuthHeader = {
+      Authorization: 'Bearer ' + token,
+      'content-type': 'application/json'
+    }
+
+    const createRes = await request(app)
+      .post('/api/BasketItems')
+      .set(authHeader)
+      .send({ BasketId: 2, ProductId: 11, quantity: 2 })
+    assert.equal(createRes.status, 200)
+    victimItemId = createRes.body.data.id
+  }, { timeout: 60000 })
+
+  void it('GET all basket items only returns the caller\'s own basket\'s items', async () => {
+    const res = await request(app).get('/api/BasketItems').set(attackerAuthHeader)
+    assert.equal(res.status, 200)
+    assert.ok(!res.body.data.some((item: { id: number }) => item.id === victimItemId))
+  })
+
+  void it('GET basket item by id belonging to a different basket is rejected', async () => {
+    const res = await request(app).get('/api/BasketItems/' + victimItemId).set(attackerAuthHeader)
+    assert.equal(res.status, 404)
+  })
+
+  void it('DELETE basket item belonging to a different basket is rejected and leaves the item intact', async () => {
+    const res = await request(app).delete('/api/BasketItems/' + victimItemId).set(attackerAuthHeader)
+    assert.equal(res.status, 401)
+
+    const stillThere = await request(app).get('/api/BasketItems/' + victimItemId).set(authHeader)
+    assert.equal(stillThere.status, 200)
+  })
+
+  void it('PUT quantity of basket item belonging to a different basket is rejected and leaves it unchanged', async () => {
+    const res = await request(app)
+      .put('/api/BasketItems/' + victimItemId)
+      .set(attackerAuthHeader)
+      .send({ quantity: 99 })
+    assert.equal(res.status, 403)
+
+    const stillThere = await request(app).get('/api/BasketItems/' + victimItemId).set(authHeader)
+    assert.equal(stillThere.status, 200)
+    assert.equal(stillThere.body.data.quantity, 2)
   })
 })

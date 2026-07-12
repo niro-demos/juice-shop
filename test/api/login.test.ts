@@ -284,4 +284,28 @@ void describe('/rest/saveLoginIp', () => {
 
     assert.equal(res.status, 401)
   })
+
+  void it('GET last login IP response does not include the password hash or totp secret', async () => {
+    const loginRes = await request(app)
+      .post('/rest/user/login')
+      .set({ 'content-type': 'application/json' })
+      .send({
+        email: 'bjoern.kimminich@gmail.com',
+        password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+      })
+
+    assert.equal(loginRes.status, 200)
+
+    const res = await request(app)
+      .get('/rest/saveLoginIp')
+      .set({
+        Authorization: 'Bearer ' + loginRes.body.authentication.token,
+        'true-client-ip': '5.6.7.8'
+      })
+
+    assert.equal(res.status, 200)
+    assert.equal(res.body.lastLoginIp, '5.6.7.8')
+    assert.equal(Object.prototype.hasOwnProperty.call(res.body, 'password'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(res.body, 'totpSecret'), false)
+  })
 })
