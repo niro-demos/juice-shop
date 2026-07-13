@@ -80,6 +80,18 @@ router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>,
     }
 
     try {
+      const storedAnswer = await SecurityAnswerModel.findOne({
+        include: [{
+          model: UserModel,
+          where: { email: loggedInUser.data.email }
+        }]
+      })
+      const submittedAnswer = req.body.securityAnswer
+      if (storedAnswer == null || !submittedAnswer || security.hmac(submittedAnswer) !== storedAnswer.answer) {
+        res.status(401).send(res.__('Wrong answer to security question.'))
+        return
+      }
+
       await PrivacyRequestModel.create({
         UserId: loggedInUser.data.id,
         deletionRequested: true
