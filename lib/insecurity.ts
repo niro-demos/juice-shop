@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-import fs from 'node:fs'
 import crypto from 'node:crypto'
 import { type Request, type Response, type NextFunction } from 'express'
 import { type UserModel } from '@juice-shop/models/user'
@@ -17,8 +16,59 @@ import * as utils from './utils'
 // @ts-expect-error FIXME no typescript definitions for z85 :(
 import * as z85 from 'z85'
 
-export const publicKey = fs ? fs.readFileSync('encryptionkeys/jwt.pub', 'utf8') : 'placeholder-public-key'
-const privateKey = '-----BEGIN RSA PRIVATE KEY-----\r\nMIICXAIBAAKBgQDNwqLEe9wgTXCbC7+RPdDbBbeqjdbs4kOPOIGzqLpXvJXlxxW8iMz0EaM4BKUqYsIa+ndv3NAn2RxCd5ubVdJJcX43zO6Ko0TFEZx/65gY3BE0O6syCEmUP4qbSd6exou/F+WTISzbQ5FBVPVmhnYhG/kpwt/cIxK5iUn5hm+4tQIDAQABAoGBAI+8xiPoOrA+KMnG/T4jJsG6TsHQcDHvJi7o1IKC/hnIXha0atTX5AUkRRce95qSfvKFweXdJXSQ0JMGJyfuXgU6dI0TcseFRfewXAa/ssxAC+iUVR6KUMh1PE2wXLitfeI6JLvVtrBYswm2I7CtY0q8n5AGimHWVXJPLfGV7m0BAkEA+fqFt2LXbLtyg6wZyxMA/cnmt5Nt3U2dAu77MzFJvibANUNHE4HPLZxjGNXN+a6m0K6TD4kDdh5HfUYLWWRBYQJBANK3carmulBwqzcDBjsJ0YrIONBpCAsXxk8idXb8jL9aNIg15Wumm2enqqObahDHB5jnGOLmbasizvSVqypfM9UCQCQl8xIqy+YgURXzXCN+kwUgHinrutZms87Jyi+D8Br8NY0+Nlf+zHvXAomD2W5CsEK7C+8SLBr3k/TsnRWHJuECQHFE9RA2OP8WoaLPuGCyFXaxzICThSRZYluVnWkZtxsBhW2W8z1b8PvWUE7kMy7TnkzeJS2LSnaNHoyxi7IaPQUCQCwWU4U+v4lD7uYBw00Ga/xt+7+UqFPlPVdz1yyr4q24Zxaw0LgmuEvgU5dycq8N7JxjTubX0MIRR+G9fmDBBl8=\r\n-----END RSA PRIVATE KEY-----'
+// The RSA key pair used to sign/verify session JWTs (RS256). It used to be a
+// hardcoded literal in this file, which meant anyone with read access to the
+// (public) source could copy the private half out and forge a validly-signed
+// token for any user id/role -- including admin -- entirely offline, with no
+// credentials. It is now provisioned at startup instead:
+//
+//  - JWT_PRIVATE_KEY / JWT_PUBLIC_KEY (PEM-encoded), when both are set, are
+//    used as-is. This is what any persistent or production deployment MUST
+//    set, generated once via a secrets manager and never committed to source.
+//  - Otherwise, for local dev/test/CI convenience only, a fresh RSA key pair
+//    is generated in-process at startup. This lets the app boot and the test
+//    suite pass without every environment needing to configure a key -- but
+//    sessions signed with it do not survive a restart and are not shared
+//    across multiple instances/replicas.
+export function loadJwtKeyPair (): { privateKey: string, publicKey: string } {
+  const envPrivateKey = process.env.JWT_PRIVATE_KEY
+  const envPublicKey = process.env.JWT_PUBLIC_KEY
+
+  if (envPrivateKey && envPublicKey) {
+    return {
+      privateKey: envPrivateKey.replace(/\\n/g, '\n'),
+      publicKey: envPublicKey.replace(/\\n/g, '\n')
+    }
+  }
+
+  if (Boolean(envPrivateKey) !== Boolean(envPublicKey)) {
+    throw new Error('Both JWT_PRIVATE_KEY and JWT_PUBLIC_KEY must be set together (only one of them was provided).')
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'JWT_PRIVATE_KEY / JWT_PUBLIC_KEY environment variables are not set. A production deployment must provide ' +
+      'a securely-generated, persisted RSA key pair (PEM-encoded) via these variables - it must never be a key ' +
+      'committed to source control.'
+    )
+  }
+
+  console.warn(
+    '[insecurity] JWT_PRIVATE_KEY / JWT_PUBLIC_KEY are not set - generating an ephemeral, in-process RSA key pair ' +
+    'for this run only (dev/test/CI fallback, NOT for production). Sessions signed with it will not survive a ' +
+    'restart and are not shared across multiple instances. Set JWT_PRIVATE_KEY / JWT_PUBLIC_KEY for any ' +
+    'persistent or production deployment.'
+  )
+  return crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    publicKeyEncoding: { type: 'pkcs1', format: 'pem' }
+  })
+}
+
+const jwtKeyPair = loadJwtKeyPair()
+export const publicKey = jwtKeyPair.publicKey
+const privateKey = jwtKeyPair.privateKey
 
 interface ResponseWithUser {
   status?: string
