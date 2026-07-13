@@ -40,10 +40,7 @@ export function saveLoginIp () {
           role: updatedUser?.role,
           lastLoginIp: updatedUser?.lastLoginIp,
           profileImage: updatedUser?.profileImage,
-          isActive: updatedUser?.isActive,
-          createdAt: updatedUser?.createdAt,
-          updatedAt: updatedUser?.updatedAt,
-          deletedAt: updatedUser?.deletedAt
+          isActive: updatedUser?.isActive
         })
       } catch (error) {
         next(error)
