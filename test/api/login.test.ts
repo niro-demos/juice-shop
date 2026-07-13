@@ -285,3 +285,38 @@ void describe('/rest/saveLoginIp', () => {
     assert.equal(res.status, 401)
   })
 })
+
+void describe('/rest/user/login rate limiting', () => {
+  void it('POST rejects further attempts with 429 after repeated failed logins from the same client', async () => {
+    // Isolated app instance so this test's rate-limit state cannot bleed
+    // into (or be polluted by) the other login tests in this file.
+    const result = await createTestApp()
+    const rateLimitedApp = result.app
+
+    // Positive control: the legitimate credential still works before we
+    // start hammering the endpoint, proving the account/environment is healthy.
+    const control = await request(rateLimitedApp)
+      .post('/rest/user/login')
+      .set({ 'content-type': 'application/json' })
+      .send({
+        email: 'jim@' + config.get<string>('application.domain'),
+        password: 'ncc-1701'
+      })
+    assert.equal(control.status, 200)
+
+    const statuses: number[] = []
+    for (let i = 0; i < 20; i++) {
+      const res = await request(rateLimitedApp)
+        .post('/rest/user/login')
+        .set({ 'content-type': 'application/json' })
+        .send({
+          email: 'jim@' + config.get<string>('application.domain'),
+          password: `wrong-password-attempt-${i}`
+        })
+      statuses.push(res.status)
+      if (res.status === 429) break
+    }
+
+    assert.ok(statuses.includes(429), `expected a 429 response among repeated failed login attempts, got: ${JSON.stringify(statuses)}`)
+  })
+})

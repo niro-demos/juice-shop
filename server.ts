@@ -347,6 +347,14 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   }))
   // vuln-code-snippet end resetPasswordMortyChallenge
 
+  /* Login: limit repeated failed login attempts from a single IP to slow down credential-guessing attacks */
+  app.use('/rest/user/login', rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    validate: false,
+    skipSuccessfulRequests: true
+  }))
+
   // vuln-code-snippet start changeProductChallenge
   /** Authorization **/
   /* Checks on JWT in Authorization header */ // vuln-code-snippet hide-line
@@ -379,7 +387,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     .delete(security.denyAll())
   /* Complaints: POST and GET allowed when logged in only */
   app.get('/api/Complaints', security.isAuthorized())
-  app.post('/api/Complaints', security.isAuthorized())
+  app.post('/api/Complaints', security.isAuthorized(), security.appendUserId())
   app.use('/api/Complaints/:id', security.denyAll())
   /* Recycles: POST and GET allowed when logged in only */
   app.get('/api/Recycles', recycles.blockRecycleItems())
@@ -395,7 +403,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.get('/api/SecurityAnswers', security.denyAll())
   app.use('/api/SecurityAnswers/:id', security.denyAll())
   /* REST API */
-  app.use('/rest/user/authentication-details', security.isAuthorized())
+  app.use('/rest/user/authentication-details', security.isAuthorized(), security.isAdmin())
   app.use('/rest/basket/:id', security.isAuthorized())
   app.use('/rest/basket/:id/order', security.isAuthorized())
   /* Challenge evaluation before finale takes over */ // vuln-code-snippet hide-start
@@ -441,13 +449,13 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.delete('/api/Cards/:id', security.appendUserId(), utils.asyncHandler(payment.delPaymentMethodById()))
   app.get('/api/Cards/:id', security.appendUserId(), utils.asyncHandler(payment.getPaymentMethodById()))
   /* PrivacyRequests: Only POST allowed for authenticated users */
-  app.post('/api/PrivacyRequests', security.isAuthorized())
+  app.post('/api/PrivacyRequests', security.isAuthorized(), security.appendUserId())
   app.get('/api/PrivacyRequests', security.denyAll())
   app.use('/api/PrivacyRequests/:id', security.denyAll())
 
   app.post('/api/Addresss', security.appendUserId())
   app.get('/api/Addresss', security.appendUserId(), utils.asyncHandler(address.getAddress()))
-  app.put('/api/Addresss/:id', security.appendUserId())
+  app.put('/api/Addresss/:id', security.appendUserId(), utils.asyncHandler(address.putAddressById()))
   app.delete('/api/Addresss/:id', security.appendUserId(), utils.asyncHandler(address.delAddressById()))
   app.get('/api/Addresss/:id', security.appendUserId(), utils.asyncHandler(address.getAddressById()))
   app.get('/api/Deliverys', utils.asyncHandler(delivery.getDeliveryMethods()))
@@ -566,6 +574,19 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
       })
     }
 
+    // restrict complaint listing to the authenticated user's own complaints
+    if (name === 'Complaint') {
+      resource.list.fetch.before((req: Request, res: Response, context: { criteria: any, continue: any, stop: any }) => {
+        const loggedInUser = security.authenticatedUsers.from(req)
+        if (loggedInUser?.data?.id === undefined) {
+          res.status(401).json({ error: 'Unauthorized' })
+          return context.stop
+        }
+        context.criteria = { UserId: loggedInUser.data.id }
+        return context.continue
+      })
+    }
+
     // translate product names and descriptions on-the-fly
     if (name === 'Product') {
       resource.list.fetch.after((req: Request, res: Response, context: { instance: any[], continue: any }) => {
@@ -635,7 +656,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.post('/rest/products/reviews', security.isAuthorized(), utils.asyncHandler(likeProductReviews()))
 
   /* Chat API endpoint */
-  app.post('/rest/chat', utils.asyncHandler(chat()))
+  app.post('/rest/chat', security.isAuthorized(), utils.asyncHandler(chat()))
 
   /* Web3 API endpoints */
   app.post('/rest/web3/submitKey', utils.asyncHandler(checkKeys()))

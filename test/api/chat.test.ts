@@ -10,11 +10,13 @@ import type { Express } from 'express'
 import * as http from 'http'
 import { createTestApp } from './helpers/setup'
 import { login } from './helpers/auth'
+import * as security from '../../lib/insecurity'
 
 const MOCK_LLM_PORT = 43210
 
 let app: Express
 let mockServer: http.Server
+let authHeader: { Authorization: string, 'content-type': string }
 let onLlmRequest: (req: http.IncomingMessage, body: string, res: http.ServerResponse) => void = (_req, _body, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' })
   res.end('{}')
@@ -98,6 +100,15 @@ before(async () => {
   })
   const result = await createTestApp()
   app = result.app
+
+  const { token } = await login(app, {
+    email: 'jim@juice-sh.op',
+    password: 'ncc-1701'
+  })
+  authHeader = {
+    Authorization: 'Bearer ' + token,
+    'content-type': 'application/json'
+  }
 }, { timeout: 60000 })
 
 after(async () => {
@@ -115,6 +126,15 @@ after(async () => {
 })
 
 void describe('/rest/chat', { timeout: 120000 }, () => {
+  void it('POST rejects requests with no Authorization header', { timeout: 15000 }, async () => {
+    const res = await request(app)
+      .post('/rest/chat')
+      .set({ 'content-type': 'application/json' })
+      .send({ messages: [{ role: 'user', content: 'Hello, can you help me?' }] })
+
+    assert.equal(res.status, 401)
+  })
+
   void it('POST returns streamed text content as SSE events', { timeout: 15000 }, async () => {
     onLlmRequest = (_req, _body, res) => {
       sendSSE(res, [
@@ -126,7 +146,7 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
 
     const res = await request(app)
       .post('/rest/chat')
-      .set({ 'content-type': 'application/json' })
+      .set(authHeader)
       .send({ messages: [{ role: 'user', content: 'Hi' }] })
 
     assert.equal(res.status, 200)
@@ -143,7 +163,7 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
 
     const res = await request(app)
       .post('/rest/chat')
-      .set({ 'content-type': 'application/json' })
+      .set(authHeader)
       .send({ messages: [{ role: 'user', content: 'Hello' }] })
 
     assert.equal(res.status, 200)
@@ -160,7 +180,7 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
 
     const res = await request(app)
       .post('/rest/chat')
-      .set({ 'content-type': 'application/json' })
+      .set(authHeader)
       .send({ messages: [{ role: 'user', content: 'What is your name?' }] })
 
     assert.equal(res.status, 200)
@@ -179,7 +199,7 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
 
     const res = await request(app)
       .post('/rest/chat')
-      .set({ 'content-type': 'application/json' })
+      .set(authHeader)
       .send({ messages: [{ role: 'user', content: 'What products do you have?' }] })
 
     assert.equal(res.status, 200)
@@ -215,7 +235,7 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
 
     const res = await request(app)
       .post('/rest/chat')
-      .set({ 'content-type': 'application/json' })
+      .set(authHeader)
       .send({ messages: [{ role: 'user', content: 'Do you have apple juice?' }] })
 
     assert.equal(res.status, 200)
@@ -231,7 +251,7 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
 
     const res = await request(app)
       .post('/rest/chat')
-      .set({ 'content-type': 'application/json' })
+      .set(authHeader)
       .send({ messages: [{ role: 'user', content: 'Hi' }] })
 
     assert.equal(res.status, 200)
@@ -249,7 +269,7 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
 
     const res = await request(app)
       .post('/rest/chat')
-      .set({ 'content-type': 'application/json' })
+      .set(authHeader)
       .send({ messages: [] })
 
     assert.equal(res.status, 200)
@@ -293,7 +313,7 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
 
     const res = await request(app)
       .post('/rest/chat')
-      .set({ 'content-type': 'application/json' })
+      .set(authHeader)
       .send({ messages: [{ role: 'user', content: 'Show me reviews for product 1' }] })
 
     assert.equal(res.status, 200)
@@ -301,6 +321,10 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
   })
 
   void it('POST handles getOrderById tool call by reporting unauthenticated customer', { timeout: 15000 }, async () => {
+    // A JWT that is validly signed (so it clears the route's isAuthorized() gate)
+    // but carries no `data.id` claim, exercising chat.ts's own defensive check for
+    // a caller the business logic cannot resolve to a user account.
+    const unresolvableUserToken = security.authorize()
     let toolResult: string | undefined
     let callCount = 0
     onLlmRequest = (_req, body, res) => {
@@ -319,7 +343,7 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
 
     const res = await request(app)
       .post('/rest/chat')
-      .set({ 'content-type': 'application/json' })
+      .set({ 'content-type': 'application/json', Authorization: 'Bearer ' + unresolvableUserToken })
       .send({ messages: [{ role: 'user', content: 'Look up my order' }] })
 
     assert.equal(res.status, 200)
@@ -372,7 +396,7 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
 
     const res = await request(app)
       .post('/rest/chat')
-      .set({ 'content-type': 'application/json' })
+      .set(authHeader)
       .send({ messages: [{ role: 'user', content: 'Give me a coupon' }] })
 
     assert.equal(res.status, 200)
@@ -392,7 +416,7 @@ void describe('/rest/chat', { timeout: 120000 }, () => {
 
     const res = await request(app)
       .post('/rest/chat')
-      .set({ 'content-type': 'application/json' })
+      .set(authHeader)
       .send({ messages: [{ role: 'user', content: 'Test' }] })
 
     assert.equal(res.status, 200)

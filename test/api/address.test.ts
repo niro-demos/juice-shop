@@ -12,6 +12,7 @@ import { login } from './helpers/auth'
 
 let app: Express
 let authHeader: { Authorization: string, 'content-type': string }
+let benderAuthHeader: { Authorization: string, 'content-type': string }
 let addressId: string
 
 before(
@@ -25,6 +26,15 @@ before(
     })
     authHeader = {
       Authorization: 'Bearer ' + token,
+      'content-type': 'application/json'
+    }
+
+    const { token: benderToken } = await login(app, {
+      email: 'bender@juice-sh.op',
+      password: 'OhG0dPlease1nsertLiquor!'
+    })
+    benderAuthHeader = {
+      Authorization: 'Bearer ' + benderToken,
       'content-type': 'application/json'
     }
   },
@@ -152,6 +162,22 @@ void describe('/api/Addresss/:id', () => {
       .send({ fullName: 'Jimy' })
     assert.equal(res.status, 200)
     assert.equal(res.body.data.fullName, 'Jimy')
+  })
+
+  void it('PUT update address by id is forbidden for a different authenticated user', async () => {
+    const res = await request(app)
+      .put('/api/Addresss/' + addressId)
+      .set(benderAuthHeader)
+      .send({ fullName: 'HACKED_BY_BENDER' })
+    assert.equal(res.status, 400)
+    assert.equal(res.body.status, 'error')
+    assert.equal(res.body.data, 'Malicious activity detected.')
+
+    const ownerCheck = await request(app)
+      .get('/api/Addresss/' + addressId)
+      .set(authHeader)
+    assert.equal(ownerCheck.status, 200)
+    assert.equal(ownerCheck.body.data.fullName, 'Jimy')
   })
 
   void it('PUT update address by id with invalid mobile number is forbidden', async () => {

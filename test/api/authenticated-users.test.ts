@@ -7,17 +7,22 @@ import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
-import * as security from '../../lib/insecurity'
 import config from 'config'
 import { createTestApp } from './helpers/setup'
 import { login } from './helpers/auth'
 
 let app: Express
-const authHeader = { Authorization: `Bearer ${security.authorize({ data: { email: 'admin@juice-sh.op' } })}`, 'content-type': 'application/json' }
+let authHeader: { Authorization: string, 'content-type': string }
 
 before(async () => {
   const result = await createTestApp()
   app = result.app
+
+  const { token } = await login(app, {
+    email: 'admin@' + config.get<string>('application.domain'),
+    password: 'admin123'
+  })
+  authHeader = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
 }, { timeout: 60000 })
 
 void describe('/rest/user/authentication-details', () => {
@@ -46,5 +51,25 @@ void describe('/rest/user/authentication-details', () => {
     const jim = res.body.data.find((user: any) => user.email.startsWith('jim@'))
     assert.ok(jim, 'Expected to find jim in the user list')
     assert.equal(typeof jim.lastLoginTime, 'number')
+  })
+
+  void it('GET is forbidden for a standard customer account', async () => {
+    const { token } = await login(app, {
+      email: `jim@${config.get<string>('application.domain')}`,
+      password: 'ncc-1701'
+    })
+
+    const res = await request(app)
+      .get('/rest/user/authentication-details')
+      .set({ Authorization: `Bearer ${token}`, 'content-type': 'application/json' })
+
+    assert.equal(res.status, 403)
+  })
+
+  void it('GET is forbidden without authentication', async () => {
+    const res = await request(app)
+      .get('/rest/user/authentication-details')
+
+    assert.equal(res.status, 401)
   })
 })
