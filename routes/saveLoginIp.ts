@@ -30,7 +30,21 @@ export function saveLoginIp () {
       try {
         const user = await UserModel.findByPk(loggedInUser.data.id)
         const updatedUser = await user?.update({ lastLoginIp: lastLoginIp?.toString() })
-        res.json(updatedUser)
+        // Never echo the raw Sequelize instance back to the caller - it
+        // carries the password hash, deluxeToken and totpSecret. Return
+        // only the fields the client actually needs.
+        res.json({
+          id: updatedUser?.id,
+          username: updatedUser?.username,
+          email: updatedUser?.email,
+          role: updatedUser?.role,
+          lastLoginIp: updatedUser?.lastLoginIp,
+          profileImage: updatedUser?.profileImage,
+          isActive: updatedUser?.isActive,
+          createdAt: updatedUser?.createdAt,
+          updatedAt: updatedUser?.updatedAt,
+          deletedAt: updatedUser?.deletedAt
+        })
       } catch (error) {
         next(error)
       }

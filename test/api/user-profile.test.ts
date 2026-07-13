@@ -53,6 +53,28 @@ void describe('/profile', () => {
     assert.equal(res.status, 302)
   })
 
+  void it('POST update username sets the session token cookie with the HttpOnly flag', async () => {
+    const res = await request(app)
+      .post('/profile')
+      .set('Cookie', authHeader.Cookie)
+      .field('username', 'Localhorst-HttpOnly-Check')
+      .redirects(0)
+
+    // Positive control: the update itself must succeed and actually re-issue
+    // a session cookie, so a failure below is provably about the missing
+    // flag and not a broken profile-update flow.
+    assert.equal(res.status, 302)
+    const setCookieHeaders = res.headers['set-cookie'] as unknown as string[]
+    assert.ok(Array.isArray(setCookieHeaders), 'expected a Set-Cookie header to be present')
+    const tokenCookie = setCookieHeaders.find((cookie: string) => cookie.startsWith('token='))
+    assert.ok(tokenCookie, 'expected a `token=` Set-Cookie header to be present')
+
+    // Security invariant: a session token cookie must not be readable by
+    // JavaScript (document.cookie), otherwise an injected/XSS script can
+    // steal the session and the MD5 password hash embedded in the JWT.
+    assert.ok(/(^|;)\s*HttpOnly\s*(;|$)/i.test(tokenCookie as string), `expected Set-Cookie for the session token to carry HttpOnly, got: ${tokenCookie}`)
+  })
+
   void it('POST update profile is forbidden for unauthenticated user', async () => {
     const res = await request(app)
       .post('/profile')

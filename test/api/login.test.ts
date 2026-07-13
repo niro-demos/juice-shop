@@ -233,6 +233,39 @@ void describe('/rest/user/login', () => {
 
     assert.equal(res.status, 401)
   })
+
+  void it('POST login rejects a deactivated (isActive:false) account even with correct credentials', async () => {
+    const email = `niro-deactivated-${Date.now()}@test.com`
+    const password = 'VerifyPass123!'
+
+    const registerRes = await request(app)
+      .post('/api/Users')
+      .set({ 'content-type': 'application/json' })
+      .send({ email, password, isActive: false })
+
+    assert.equal(registerRes.status, 201)
+    assert.equal(registerRes.body.data.isActive, false)
+
+    // Security invariant: a deactivated account must not be able to
+    // authenticate, even with fully correct credentials.
+    const res = await request(app)
+      .post('/rest/user/login')
+      .set({ 'content-type': 'application/json' })
+      .send({ email, password })
+
+    assert.equal(res.status, 401)
+    assert.equal(res.body?.authentication?.token, undefined)
+
+    // Positive control: the same deactivated account with a WRONG password
+    // is still rejected, proving the login endpoint itself is healthy and
+    // the failure above is specifically about the missing isActive guard.
+    const wrongPasswordRes = await request(app)
+      .post('/rest/user/login')
+      .set({ 'content-type': 'application/json' })
+      .send({ email, password: 'not-the-right-password' })
+
+    assert.equal(wrongPasswordRes.status, 401)
+  })
 })
 
 void describe('/rest/saveLoginIp', () => {
@@ -283,5 +316,35 @@ void describe('/rest/saveLoginIp', () => {
     const res = await request(app).get('/rest/saveLoginIp')
 
     assert.equal(res.status, 401)
+  })
+
+  void it('GET last login IP response must not include the caller\'s password hash or deluxeToken', async () => {
+    const loginRes = await request(app)
+      .post('/rest/user/login')
+      .set({ 'content-type': 'application/json' })
+      .send({
+        email: 'bjoern.kimminich@gmail.com',
+        password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+      })
+
+    assert.equal(loginRes.status, 200)
+
+    const res = await request(app)
+      .get('/rest/saveLoginIp')
+      .set({
+        Authorization: 'Bearer ' + loginRes.body.authentication.token,
+        'true-client-ip': '1.2.3.4'
+      })
+
+    // Positive control: the endpoint must still do its actual job (update
+    // and return the login IP), so a failure below is provably about the
+    // leaked credential fields, not a broken/unhealthy route.
+    assert.equal(res.status, 200)
+    assert.equal(res.body.lastLoginIp, '1.2.3.4')
+
+    // Security invariant: a logged-in user's hashed password (and deluxe
+    // token) must never be echoed back in the response body.
+    assert.equal(Object.prototype.hasOwnProperty.call(res.body, 'password'), false, `expected no password field in response, got: ${JSON.stringify(res.body)}`)
+    assert.equal(Object.prototype.hasOwnProperty.call(res.body, 'deluxeToken'), false, `expected no deluxeToken field in response, got: ${JSON.stringify(res.body)}`)
   })
 })
