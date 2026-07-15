@@ -37,6 +37,29 @@ void describe('/rest/memories', () => {
     assert.equal(res.status, 200)
   })
 
+  void it('GET memories does not leak joined User account fields to an unauthenticated caller', async () => {
+    const res = await request(app)
+      .get('/rest/memories')
+    assert.equal(res.status, 200)
+
+    const memories = res.body.data
+    assert.ok(Array.isArray(memories) && memories.length > 0, 'expected seeded memories to be present')
+
+    const memoriesWithUser = memories.filter((memory: { User?: unknown }) => memory.User)
+    assert.ok(memoriesWithUser.length > 0, 'expected at least one memory joined to a User to inspect')
+
+    for (const memory of memoriesWithUser) {
+      const user = memory.User
+      assert.equal(user.password, undefined, `User.password must not be exposed (memory ${memory.id})`)
+      assert.equal(user.email, undefined, `User.email must not be exposed (memory ${memory.id})`)
+      assert.equal(user.role, undefined, `User.role must not be exposed (memory ${memory.id})`)
+      assert.equal(user.deluxeToken, undefined, `User.deluxeToken must not be exposed (memory ${memory.id})`)
+      assert.equal(user.totpSecret, undefined, `User.totpSecret must not be exposed (memory ${memory.id})`)
+      // the photo-wall UI only needs a display name, so the join is expected to still carry it
+      assert.notEqual(user.username, undefined, `User.username should still be present (memory ${memory.id})`)
+    }
+  })
+
   void it('POST new memory is forbidden via public API', async () => {
     const file = path.resolve(__dirname, '../files/validProfileImage.jpg')
     const res = await request(app)
