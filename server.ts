@@ -517,6 +517,23 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     } // vuln-code-snippet neutral-line registerAdminChallenge
     // vuln-code-snippet end registerAdminChallenge
 
+    // Registration must not disclose whether a given email address already has an
+    // account: fold the Sequelize unique-constraint violation on `email` into the
+    // same generic 400 response used for any other rejected create request, instead
+    // of surfacing the distinctive "email must be unique" validation error that
+    // would let an unauthenticated caller enumerate registered accounts.
+    if (name === 'User') {
+      const defaultCreateError = resource.controllers.create.error.bind(resource.controllers.create)
+      resource.controllers.create.error = (req: Request, res: Response, err: { errors?: Array<{ field?: string, message?: string }> }) => {
+        const isDuplicateEmail = Array.isArray(err?.errors) && err.errors.some((e) => e.field === 'email' && /unique/i.test(e.message ?? ''))
+        if (isDuplicateEmail) {
+          res.status(400).json({ status: 'error', message: 'Bad Request' })
+          return
+        }
+        defaultCreateError(req, res, err)
+      }
+    }
+
     // translate challenge descriptions on-the-fly
     if (name === 'Challenge') {
       resource.list.fetch.after((req: Request, res: Response, context: { instance: string | any[], continue: any }) => {

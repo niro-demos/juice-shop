@@ -112,6 +112,29 @@ void describe('/api/Users', () => {
     assert.ok(res.headers['content-type']?.includes('application/json'))
   })
 
+  void it('POST registration for an already-registered email must not disclose that the account exists', async () => {
+    const email = `already-registered-${Date.now()}@test.test`
+
+    // Positive control: a fresh registration must still succeed normally.
+    const firstRes = await request(app)
+      .post('/api/Users')
+      .set(jsonHeader)
+      .send({ email, password: 'Passw0rd123!' })
+    assert.equal(firstRes.status, 201)
+
+    // Exploit: probing the now-registered email a second time must not return
+    // the distinctive "email must be unique" validation error that lets an
+    // unauthenticated caller enumerate which emails already have accounts.
+    const secondRes = await request(app)
+      .post('/api/Users')
+      .set(jsonHeader)
+      .send({ email, password: 'Passw0rd123!' })
+    const disclosesDuplicateEmail = secondRes.status === 400 &&
+      Array.isArray(secondRes.body.errors) &&
+      secondRes.body.errors.some((e: { field?: string, message?: string }) => e.field === 'email' && /unique/i.test(e.message ?? ''))
+    assert.equal(disclosesDuplicateEmail, false)
+  })
+
   void it('POST whitespaces user', async () => {
     const res = await request(app)
       .post('/api/Users')
