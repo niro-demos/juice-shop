@@ -24,9 +24,9 @@
   app.route('/api/Hints/:id')
     .get(security.denyAll())
     .delete(security.denyAll())
-  /* Complaints: POST and GET allowed when logged in only */
-  app.get('/api/Complaints', security.isAuthorized())
-  app.post('/api/Complaints', security.isAuthorized())
+  /* Complaints: POST and GET allowed when logged in only, always scoped to the caller */
+  app.get('/api/Complaints', security.appendUserId(), utils.asyncHandler(complaint.getComplaints()))
+  app.post('/api/Complaints', security.appendUserId())
   app.use('/api/Complaints/:id', security.denyAll())
   /* Recycles: POST and GET allowed when logged in only */
   app.get('/api/Recycles', recycles.blockRecycleItems())

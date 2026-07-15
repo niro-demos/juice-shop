@@ -70,6 +70,7 @@ import * as verify from './routes/verify'
 import * as address from './routes/address'
 import * as metrics from './routes/metrics'
 import * as payment from './routes/payment'
+import * as complaint from './routes/complaint'
 import { placeOrder } from './routes/order'
 import { b2bOrder } from './routes/b2bOrder'
 import * as delivery from './routes/delivery'
@@ -377,9 +378,9 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.route('/api/Hints/:id')
     .get(security.denyAll())
     .delete(security.denyAll())
-  /* Complaints: POST and GET allowed when logged in only */
-  app.get('/api/Complaints', security.isAuthorized())
-  app.post('/api/Complaints', security.isAuthorized())
+  /* Complaints: POST and GET allowed when logged in only, always scoped to the caller */
+  app.get('/api/Complaints', security.appendUserId(), utils.asyncHandler(complaint.getComplaints()))
+  app.post('/api/Complaints', security.appendUserId())
   app.use('/api/Complaints/:id', security.denyAll())
   /* Recycles: POST and GET allowed when logged in only */
   app.get('/api/Recycles', recycles.blockRecycleItems())
