@@ -7,7 +7,8 @@
         execute: async ({ discount, orderId, authenticatedUser }) => {
           const order = await db.ordersCollection.findOne({ orderId, email: authenticatedUser?.email, status: OrderStatus.DAMAGED })
           if (!order) return { error: 'No verified damaged order found for this order ID.' }
-          const couponCode = security.generateCoupon(discount)
+          const userId = await getUserId(req)
+          const couponCode = security.issueCoupon(discount, userId)
           return { couponCode, discount }
         }
       }),

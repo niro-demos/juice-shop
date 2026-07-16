@@ -8,12 +8,11 @@ import { BasketModel } from '../models/basket'
 import * as security from '../lib/insecurity'
 
 export function applyCoupon () {
-  return async ({ params }: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const { params } = req
       const id = params.id
-      let coupon: string | undefined | null = params.coupon ? decodeURIComponent(params.coupon) : undefined
-      const discount = security.discountFromCoupon(coupon)
-      coupon = discount ? coupon : null
+      const coupon: string | undefined = params.coupon ? decodeURIComponent(params.coupon) : undefined
 
       const basket = await BasketModel.findByPk(id)
       if (!basket) {
@@ -21,10 +20,18 @@ export function applyCoupon () {
         return
       }
 
-      await basket.update({ coupon: coupon?.toString() })
+      const user = security.authenticatedUsers.from(req)
+      if (!user?.bid || Number(user.bid) !== Number(id) || Number(user.data?.id) !== Number(basket.UserId)) {
+        res.status(403).json({ status: 'error', error: 'Invalid BasketId' })
+        return
+      }
+
+      const discount = security.redeemIssuedCoupon(coupon, basket.UserId)
       if (discount) {
+        await basket.update({ coupon: coupon?.toString() })
         return res.json({ discount })
       } else {
+        await basket.update({ coupon: null })
         return res.status(404).send('Invalid coupon.')
       }
     } catch (error) {

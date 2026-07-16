@@ -15,13 +15,16 @@ import { challenges } from '../data/datacache'
 export function retrieveBasket () {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const id = req.params.id
-      const basket = await BasketModel.findOne({ where: { id }, include: [{ model: ProductModel, paranoid: false, as: 'Products' }] })
-      /* jshint eqeqeq:false */
+      const id = Number.parseInt(req.params.id, 10)
+      const user = security.authenticatedUsers.from(req)
       challengeUtils.solveIf(challenges.basketAccessChallenge, () => {
-        const user = security.authenticatedUsers.from(req)
-        return user && id && id !== 'undefined' && id !== 'null' && id !== 'NaN' && user.bid && user?.bid != parseInt(id, 10) // eslint-disable-line eqeqeq
+        return user && req.params.id && req.params.id !== 'undefined' && req.params.id !== 'null' && req.params.id !== 'NaN' && user.bid && user?.bid != id // eslint-disable-line eqeqeq
       })
+      if (!user?.bid || Number(user.bid) !== id) {
+        res.status(403).json({ error: 'Invalid BasketId' })
+        return
+      }
+      const basket = await BasketModel.findOne({ where: { id }, include: [{ model: ProductModel, paranoid: false, as: 'Products' }] })
       if (((basket?.Products) != null) && basket.Products.length > 0) {
         for (let i = 0; i < basket.Products.length; i++) {
           basket.Products[i].name = req.__(basket.Products[i].name)

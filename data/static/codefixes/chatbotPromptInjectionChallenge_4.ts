@@ -9,7 +9,8 @@
           if (!orderIdPattern.test(reason)) {
             return { error: 'Reason must reference a valid order ID.' }
           }
-          const couponCode = security.generateCoupon(discount)
+          const userId = await getUserId(req)
+          const couponCode = security.issueCoupon(discount, userId)
           return { couponCode, discount }
         }
       })

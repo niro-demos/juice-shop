@@ -94,7 +94,8 @@ const chatTools = {
       discount: z.number().describe('The discount percentage for the coupon (maximum 10)')
     }),
     execute: async ({ discount }) => {
-      const couponCode = security.generateCoupon(discount)
+      const userId = await getUserId(req)
+      const couponCode = security.issueCoupon(discount, userId)
       return { couponCode, discount }
     }
   })

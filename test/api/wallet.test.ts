@@ -44,19 +44,24 @@ void describe('/api/Wallets', () => {
     assert.equal(res.status, 401)
   })
 
-  void it('PUT charge wallet from credit card of requesting user', async () => {
+  void it('PUT charge wallet from credit card without completed charge proof is forbidden', async () => {
+    const before = await request(app)
+      .get('/rest/wallet/balance')
+      .set(authHeader)
+    assert.equal(before.status, 200)
+
     const res = await request(app)
       .put('/rest/wallet/balance')
       .set(authHeader)
       .send({ balance: 10, paymentId: 2 })
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 402)
 
     const balanceRes = await request(app)
       .get('/rest/wallet/balance')
       .set(authHeader)
     assert.equal(balanceRes.status, 200)
     assert.ok(balanceRes.headers['content-type']?.includes('application/json'))
-    assert.equal(balanceRes.body.data, 210)
+    assert.equal(balanceRes.body.data, before.body.data)
   })
 
   void it('PUT charge wallet from foreign credit card is forbidden', async () => {

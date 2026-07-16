@@ -21,6 +21,38 @@ before(async () => {
   app = result.app
 }, { timeout: 60000 })
 
+async function placeAmyOrder (authHeader: { Authorization: string, 'content-type': string }) {
+  const basket = await request(app)
+    .get('/rest/basket/4')
+    .set(authHeader)
+  assert.equal(basket.status, 200)
+
+  if ((basket.body.data.Products ?? []).length === 0) {
+    const item = await request(app)
+      .post('/api/BasketItems')
+      .set(authHeader)
+      .send({ BasketId: 4, ProductId: 4, quantity: 2 })
+    assert.equal(item.status, 200)
+  }
+
+  const card = await request(app)
+    .post('/api/Cards')
+    .set(authHeader)
+    .send({
+      fullName: 'Amy Wong',
+      cardNum: 4111111111111111,
+      expMonth: 1,
+      expYear: 2091
+    })
+  assert.equal(card.status, 201)
+
+  const checkout = await request(app)
+    .post('/rest/basket/4/checkout')
+    .set(authHeader)
+    .send({ orderDetails: { paymentId: card.body.data.id } })
+  assert.equal(checkout.status, 200)
+}
+
 void describe('/rest/user/data-export', () => {
   void it('Export data without authentication is rejected', async () => {
     const res = await request(app)
@@ -134,9 +166,7 @@ void describe('/rest/user/data-export', () => {
     const { token } = await login(app, { email: 'amy@' + config.get<string>('application.domain'), password: 'K1f.....................' })
     const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
 
-    await request(app)
-      .post('/rest/basket/4/checkout')
-      .set(authHeader)
+    await placeAmyOrder(authHeader)
 
     const res = await request(app)
       .post('/rest/user/data-export')
@@ -216,9 +246,7 @@ void describe('/rest/user/data-export', () => {
     const { token } = await login(app, { email: 'amy@' + config.get<string>('application.domain'), password: 'K1f.....................' })
     const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
 
-    await request(app)
-      .post('/rest/basket/4/checkout')
-      .set(authHeader)
+    await placeAmyOrder(authHeader)
 
     const captchaRes = await request(app)
       .get('/rest/image-captcha')

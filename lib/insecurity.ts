@@ -99,6 +99,39 @@ export const generateCoupon = (discount: number, date = new Date()) => {
   return z85.encode(coupon)
 }
 
+interface IssuedCoupon {
+  discount: number
+  userId?: number
+  redeemed: boolean
+}
+
+const issuedCoupons = new Map<string, IssuedCoupon>()
+
+export const issueCoupon = (discount: number, userId?: number) => {
+  const coupon = utils.randomHexString(32)
+  issuedCoupons.set(coupon, { discount, userId, redeemed: false })
+  return coupon
+}
+
+export const redeemIssuedCoupon = (coupon?: string, userId?: number) => {
+  const issuedCoupon = coupon ? issuedCoupons.get(coupon) : undefined
+  if (!issuedCoupon || issuedCoupon.redeemed || !couponMatchesUser(issuedCoupon, userId)) {
+    return undefined
+  }
+
+  issuedCoupon.redeemed = true
+  return issuedCoupon.discount
+}
+
+export const discountFromIssuedCoupon = (coupon?: string, userId?: number) => {
+  const issuedCoupon = coupon ? issuedCoupons.get(coupon) : undefined
+  if (!issuedCoupon?.redeemed || !couponMatchesUser(issuedCoupon, userId)) {
+    return undefined
+  }
+
+  return issuedCoupon.discount
+}
+
 export const discountFromCoupon = (coupon?: string) => {
   if (!coupon) {
     return undefined
@@ -112,6 +145,10 @@ export const discountFromCoupon = (coupon?: string) => {
       return parseInt(discount)
     }
   }
+}
+
+function couponMatchesUser (coupon: IssuedCoupon, userId?: number) {
+  return coupon.userId === undefined || (userId !== undefined && Number(coupon.userId) === Number(userId))
 }
 
 function hasValidFormat (coupon: string) {
