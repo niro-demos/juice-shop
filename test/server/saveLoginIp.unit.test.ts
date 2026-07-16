@@ -16,12 +16,12 @@ void describe('saveLoginIp', () => {
 
   beforeEach(() => {
     req = { headers: {}, socket: { remoteAddress: '127.0.0.1' } }
-    res = { json: mock.fn(), sendStatus: mock.fn() }
+    res = { json: mock.fn(), sendStatus: mock.fn(), clearCookie: mock.fn() }
     next = mock.fn()
   })
 
   void it('should return 401 if user is not authenticated', async () => {
-    mock.method(security.authenticatedUsers, 'from', () => undefined)
+    mock.method(security.authenticatedUsers, 'get', () => undefined)
 
     await saveLoginIp()(req, res, next)
 
@@ -30,7 +30,8 @@ void describe('saveLoginIp', () => {
   })
 
   void it('should use the first element if true-client-ip header is an array', async () => {
-    mock.method(security.authenticatedUsers, 'from', () => ({ data: { id: 1 } }))
+    mock.method(security.authenticatedUsers, 'get', () => ({ data: { id: 1 } }))
+    req.headers.authorization = 'Bearer token'
     req.headers['true-client-ip'] = ['1.1.1.1', '2.2.2.2']
     const findByPkMock = mock.method(UserModel, 'findByPk', async () => ({
       update: mock.fn(async (data: any) => data)
@@ -45,7 +46,8 @@ void describe('saveLoginIp', () => {
   })
 
   void it('should call next with error if update fails', async () => {
-    mock.method(security.authenticatedUsers, 'from', () => ({ data: { id: 1 } }))
+    mock.method(security.authenticatedUsers, 'get', () => ({ data: { id: 1 } }))
+    req.headers.authorization = 'Bearer token'
     const error = new Error('Update failed')
     mock.method(UserModel, 'findByPk', async () => ({
       update: mock.fn(async () => { throw error })

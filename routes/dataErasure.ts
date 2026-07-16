@@ -80,6 +80,16 @@ router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>,
     }
 
     try {
+      const answer = await SecurityAnswerModel.findOne({
+        where: { UserId: loggedInUser.data.id }
+      })
+      const emailMatchesSession = req.body.email === loggedInUser.data.email
+      const answerMatchesAccount = answer?.answer === security.hmac(req.body.securityAnswer ?? '')
+      if (!emailMatchesSession || !answerMatchesAccount) {
+        res.status(401).send(res.__('Security answer is not correct.'))
+        return
+      }
+
       await PrivacyRequestModel.create({
         UserId: loggedInUser.data.id,
         deletionRequested: true

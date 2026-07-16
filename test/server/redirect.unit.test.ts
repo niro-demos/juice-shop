@@ -75,12 +75,14 @@ void describe('redirect', () => {
     assert.equal(challenges.redirectCryptoCurrencyChallenge.solved, true)
   })
 
-  void it('tricking the allowlist should solve "redirectChallenge"', () => {
+  void it('tricking the allowlist should not solve "redirectChallenge"', () => {
     req.query.to = 'http://kimminich.de?to=https://github.com/juice-shop/juice-shop'
     challenges.redirectChallenge = { solved: false, save } as unknown as Challenge
 
     performRedirect()(req, res, next)
 
-    assert.equal(challenges.redirectChallenge.solved, true)
+    assert.equal(res.redirect.mock.calls.length, 0)
+    assert.equal(next.mock.calls.length, 1)
+    assert.equal(challenges.redirectChallenge.solved, false)
   })
 })

@@ -173,6 +173,26 @@ void describe('/rest/2fa/status', () => {
 
     assert.equal(res.status, 401)
   })
+
+  void it('GET rejects a retained token after the logout saveLoginIp request', async () => {
+    const { token } = await login(app, {
+      email: `J12934@${config.get<string>('application.domain')}`,
+      password: '0Y8rMnww$*9VFYE§59-!Fg1L6t&6lB'
+    })
+
+    const logoutSideEffect = await request(app)
+      .get('/rest/saveLoginIp')
+      .set({
+        Authorization: 'Bearer ' + token,
+        'true-client-ip': '203.0.113.77'
+      })
+
+    assert.equal(logoutSideEffect.status, 200)
+
+    const res = await getStatus(token)
+
+    assert.equal(res.status, 401)
+  })
 })
 
 void describe('/rest/2fa/setup', () => {

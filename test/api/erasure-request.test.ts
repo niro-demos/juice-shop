@@ -50,12 +50,13 @@ void describe('/dataerasure', () => {
   })
 
   void it('POST erasure request does not actually delete the user', async () => {
-    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+    const { token } = await login(app, { email: 'bjoern@owasp.org', password: 'kitten lesser pooch karate buffoon indoors' })
 
     const res = await request(app)
       .post('/dataerasure/')
       .set({ Cookie: 'token=' + token })
-      .field('email', 'bjoern.kimminich@gmail.com')
+      .type('form')
+      .send({ email: 'bjoern@owasp.org', securityAnswer: 'Zaya' })
 
     assert.equal(res.status, 200)
     assert.ok(res.headers['content-type']?.includes('text/html'))
@@ -63,9 +64,22 @@ void describe('/dataerasure', () => {
     const loginRes = await request(app)
       .post('/rest/user/login')
       .set({ 'content-type': 'application/json' })
-      .send({ email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+      .send({ email: 'bjoern@owasp.org', password: 'kitten lesser pooch karate buffoon indoors' })
 
     assert.equal(loginRes.status, 200)
+  })
+
+  void it('POST erasure request rejects an incorrect security answer', async () => {
+    const { token } = await login(app, { email: 'bjoern@owasp.org', password: 'kitten lesser pooch karate buffoon indoors' })
+
+    const res = await request(app)
+      .post('/dataerasure/')
+      .set({ Cookie: 'token=' + token })
+      .type('form')
+      .send({ email: 'bjoern@owasp.org', securityAnswer: 'definitely-wrong' })
+
+    assert.equal(res.status, 401)
+    assert.equal(res.text.includes('Sorry to see you leave! Your erasure request will be processed shortly.'), false)
   })
 
   void it('POST erasure form  fails on unauthenticated access', async () => {
@@ -77,35 +91,35 @@ void describe('/dataerasure', () => {
   })
 
   void it('POST erasure request with empty layout parameter returns', async () => {
-    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+    const { token } = await login(app, { email: 'bjoern@owasp.org', password: 'kitten lesser pooch karate buffoon indoors' })
 
     const res = await request(app)
       .post('/dataerasure/')
       .set({ Cookie: 'token=' + token })
-      .send({ layout: null })
+      .send({ email: 'bjoern@owasp.org', securityAnswer: 'Zaya', layout: null })
 
     assert.equal(res.status, 200)
   })
 
   void it('POST erasure request with non-existing file path as layout parameter throws error', async () => {
-    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+    const { token } = await login(app, { email: 'bjoern@owasp.org', password: 'kitten lesser pooch karate buffoon indoors' })
 
     const res = await request(app)
       .post('/dataerasure/')
       .set({ Cookie: 'token=' + token })
-      .send({ layout: '../this/file/does/not/exist' })
+      .send({ email: 'bjoern@owasp.org', securityAnswer: 'Zaya', layout: '../this/file/does/not/exist' })
 
     assert.equal(res.status, 500)
     assert.ok(res.text.includes('no such file or directory'))
   })
 
   void it('POST erasure request with existing file path as layout parameter returns content truncated', async () => {
-    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+    const { token } = await login(app, { email: 'bjoern@owasp.org', password: 'kitten lesser pooch karate buffoon indoors' })
 
     const res = await request(app)
       .post('/dataerasure/')
       .set({ Cookie: 'token=' + token })
-      .send({ layout: '../package.json' })
+      .send({ email: 'bjoern@owasp.org', securityAnswer: 'Zaya', layout: '../package.json' })
 
     assert.equal(res.status, 200)
     assert.ok(res.text.includes('juice-shop'))

@@ -10,6 +10,7 @@ import type { Express } from 'express'
 import config from 'config'
 import * as security from '../../lib/insecurity'
 import { createTestApp } from './helpers/setup'
+import { login } from './helpers/auth'
 
 let app: Express
 const authHeader = { Authorization: `Bearer ${security.authorize()}`, 'content-type': 'application/json' }
@@ -71,9 +72,22 @@ void describe('/api/SecurityQuestions/:id', () => {
 })
 
 void describe('/rest/user/security-question', () => {
-  void it('GET security question for an existing user\'s email address', async () => {
+  void it('GET security question returns nothing for an existing user\'s email address without authentication', async () => {
     const res = await request(app)
       .get(`/rest/user/security-question?email=jim@${config.get<string>('application.domain')}`)
+
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.body, {})
+  })
+
+  void it('GET security question for the authenticated user\'s own email address', async () => {
+    const { token } = await login(app, {
+      email: `jim@${config.get<string>('application.domain')}`,
+      password: 'ncc-1701'
+    })
+    const res = await request(app)
+      .get(`/rest/user/security-question?email=jim@${config.get<string>('application.domain')}`)
+      .set({ Authorization: 'Bearer ' + token })
 
     assert.equal(res.status, 200)
     assert.equal(res.body.question.question, 'Your eldest siblings middle name?')
@@ -87,14 +101,12 @@ void describe('/rest/user/security-question', () => {
     assert.deepEqual(res.body, {})
   })
 
-  void it('GET security question throws error for missing email address', async () => {
+  void it('GET security question returns nothing for missing email address', async () => {
     const res = await request(app)
       .get('/rest/user/security-question')
 
-    assert.equal(res.status, 500)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`${config.get<string>('application.name')} (Express`))
-    assert.ok(res.text.includes('Error: WHERE parameter &quot;email&quot; has invalid &quot;undefined&quot; value'))
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.body, {})
   })
 
   void it('GET security question is not susceptible to SQL Injection attacks', async () => {

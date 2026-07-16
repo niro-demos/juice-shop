@@ -7,15 +7,21 @@ import { type Request, type Response, type NextFunction } from 'express'
 import { SecurityAnswerModel } from '../models/securityAnswer'
 import { UserModel } from '../models/user'
 import { SecurityQuestionModel } from '../models/securityQuestion'
+import * as security from '../lib/insecurity'
 
 export function securityQuestion () {
-  return async ({ query }: Request, res: Response, next: NextFunction) => {
-    const email = query.email
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const email = req.query.email?.toString()
+    const loggedInUser = security.authenticatedUsers.from(req) ?? security.authenticatedUsers.get(req.cookies?.token)
+    if (!loggedInUser || loggedInUser.data.email !== email) {
+      res.json({})
+      return
+    }
     try {
       const answer = await SecurityAnswerModel.findOne({
         include: [{
           model: UserModel,
-          where: { email: email?.toString() }
+          where: { email }
         }]
       })
       if (answer != null) {

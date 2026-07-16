@@ -12,6 +12,12 @@ import { createTestApp } from './helpers/setup'
 
 let app: Express
 
+function assertNoPrivateAccountFields (body: Record<string, unknown>) {
+  for (const field of ['password', 'totpSecret', 'deluxeToken']) {
+    assert.equal(Object.prototype.hasOwnProperty.call(body, field), false, `${field} must not be serialized`)
+  }
+}
+
 before(async () => {
   const result = await createTestApp()
   app = result.app
@@ -152,7 +158,7 @@ void describe('/rest/user/login', () => {
     assert.equal(typeof res.body.authentication.token, 'string')
   })
 
-  void it('POST login with WHERE-clause disabling SQL injection attack', async () => {
+  void it('POST login with WHERE-clause disabling SQL injection attack is rejected', async () => {
     const res = await request(app)
       .post('/rest/user/login')
       .set({ 'content-type': 'application/json' })
@@ -161,12 +167,22 @@ void describe('/rest/user/login', () => {
         password: undefined
       })
 
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(typeof res.body.authentication.token, 'string')
+    assert.equal(res.status, 401)
   })
 
-  void it('POST login with known email "admin@juice-sh.op" in SQL injection attack', async () => {
+  void it('POST login with boolean SQL injection attack is rejected', async () => {
+    const res = await request(app)
+      .post('/rest/user/login')
+      .set({ 'content-type': 'application/json' })
+      .send({
+        email: '\' OR true--',
+        password: 'x'
+      })
+
+    assert.equal(res.status, 401)
+  })
+
+  void it('POST login with known email "admin@juice-sh.op" in SQL injection attack is rejected', async () => {
     const res = await request(app)
       .post('/rest/user/login')
       .set({ 'content-type': 'application/json' })
@@ -175,12 +191,10 @@ void describe('/rest/user/login', () => {
         password: undefined
       })
 
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(typeof res.body.authentication.token, 'string')
+    assert.equal(res.status, 401)
   })
 
-  void it('POST login with known email "jim@juice-sh.op" in SQL injection attack', async () => {
+  void it('POST login with known email "jim@juice-sh.op" in SQL injection attack is rejected', async () => {
     const res = await request(app)
       .post('/rest/user/login')
       .set({ 'content-type': 'application/json' })
@@ -189,12 +203,10 @@ void describe('/rest/user/login', () => {
         password: undefined
       })
 
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(typeof res.body.authentication.token, 'string')
+    assert.equal(res.status, 401)
   })
 
-  void it('POST login with known email "bender@juice-sh.op" in SQL injection attack', async () => {
+  void it('POST login with known email "bender@juice-sh.op" in SQL injection attack is rejected', async () => {
     const res = await request(app)
       .post('/rest/user/login')
       .set({ 'content-type': 'application/json' })
@@ -203,12 +215,10 @@ void describe('/rest/user/login', () => {
         password: undefined
       })
 
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(typeof res.body.authentication.token, 'string')
+    assert.equal(res.status, 401)
   })
 
-  void it('POST login with non-existing email "acc0unt4nt@juice-sh.op" via UNION SELECT injection attack', async () => {
+  void it('POST login with non-existing email "acc0unt4nt@juice-sh.op" via UNION SELECT injection attack is rejected', async () => {
     const res = await request(app)
       .post('/rest/user/login')
       .set({ 'content-type': 'application/json' })
@@ -217,9 +227,7 @@ void describe('/rest/user/login', () => {
         password: undefined
       })
 
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(typeof res.body.authentication.token, 'string')
+    assert.equal(res.status, 401)
   })
 
   void it('POST login with query-breaking SQL Injection attack', async () => {
@@ -256,6 +264,7 @@ void describe('/rest/saveLoginIp', () => {
 
     assert.equal(res.status, 200)
     assert.equal(res.body.lastLoginIp, '1.2.3.4')
+    assertNoPrivateAccountFields(res.body)
   })
 
   void it('GET last login IP will be saved as remote IP when True-Client-IP is not present', async () => {
@@ -277,6 +286,28 @@ void describe('/rest/saveLoginIp', () => {
 
     assert.equal(res.status, 200)
     assert.equal(res.body.lastLoginIp, '127.0.0.1')
+    assertNoPrivateAccountFields(res.body)
+  })
+
+  void it('GET rejects executable markup in True-Client-IP header', async () => {
+    const loginRes = await request(app)
+      .post('/rest/user/login')
+      .set({ 'content-type': 'application/json' })
+      .send({
+        email: 'bjoern.kimminich@gmail.com',
+        password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+      })
+
+    assert.equal(loginRes.status, 200)
+
+    const res = await request(app)
+      .get('/rest/saveLoginIp')
+      .set({
+        Authorization: 'Bearer ' + loginRes.body.authentication.token,
+        'true-client-ip': '<img src=x onerror="document.documentElement.setAttribute(\'data-niro-xss\',\'probe\')">'
+      })
+
+    assert.equal(res.status, 400)
   })
 
   void it('GET last login IP returns 401 Unauthorized when no token is provided', async () => {

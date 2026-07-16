@@ -31,11 +31,14 @@ interface ResponseWithUser {
 interface IAuthenticatedUsers {
   tokenMap: Record<string, ResponseWithUser>
   idMap: Record<string, string>
+  revokedTokens: Set<string>
   put: (token: string, user: ResponseWithUser) => void
+  remove: (token?: string) => void
   get: (token?: string) => ResponseWithUser | undefined
   tokenOf: (user: UserModel) => string | undefined
   from: (req: Request) => ResponseWithUser | undefined
   updateFrom: (req: Request, user: ResponseWithUser) => any
+  isRevoked: (token?: string) => boolean
 }
 
 export const hash = (data: string) => crypto.createHash('md5').update(data).digest('hex')
@@ -49,9 +52,18 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
+export const isAuthorized = () => [
+  (req: Request, res: Response, next: NextFunction) => {
+    if (authenticatedUsers.isRevoked(utils.jwtFrom(req))) {
+      res.status(401).send()
+      return
+    }
+    next()
+  },
+  expressJwt(({ secret: publicKey }) as any)
+]
 export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
-export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
+export const authorize = (user = {}) => jwt.sign({ ...user, jti: crypto.randomUUID() }, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
 export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
@@ -67,18 +79,53 @@ export const sanitizeSecure = (html: string): string => {
   }
 }
 
+export const safeUserFields = ['id', 'email', 'lastLoginIp', 'profileImage']
+const safeUserFieldSet = new Set(safeUserFields)
+
+export const toSafeUser = (user: any, fields?: string[]) => {
+  const plainUser = typeof user?.get === 'function' ? user.get({ plain: true }) : user
+  const selectedFields = fields && fields.length > 0 ? fields : safeUserFields
+  const safeUser: Record<string, unknown> = {}
+
+  for (const field of selectedFields) {
+    if (safeUserFieldSet.has(field) && plainUser?.[field] !== undefined) {
+      safeUser[field] = plainUser[field]
+    }
+  }
+
+  return safeUser
+}
+
 export const authenticatedUsers: IAuthenticatedUsers = {
   tokenMap: {},
   idMap: {},
+  revokedTokens: new Set<string>(),
   put: function (token: string, user: ResponseWithUser) {
+    if (this.isRevoked(token)) {
+      return
+    }
     this.tokenMap[token] = user
     this.idMap[user.data.id] = token
   },
+  remove: function (token?: string) {
+    if (!token) {
+      return
+    }
+    const unquotedToken = utils.unquote(token)
+    const user = this.tokenMap[unquotedToken]
+    if (user?.data?.id !== undefined && this.idMap[user.data.id] === unquotedToken) {
+      delete this.idMap[user.data.id]
+    }
+    delete this.tokenMap[unquotedToken]
+    this.revokedTokens.add(unquotedToken)
+  },
   get: function (token?: string) {
-    return token ? this.tokenMap[utils.unquote(token)] : undefined
+    const unquotedToken = token ? utils.unquote(token) : undefined
+    return unquotedToken && !this.isRevoked(unquotedToken) ? this.tokenMap[unquotedToken] : undefined
   },
   tokenOf: function (user: UserModel) {
-    return user ? this.idMap[user.id] : undefined
+    const token = user ? this.idMap[user.id] : undefined
+    return this.isRevoked(token) ? undefined : token
   },
   from: function (req: Request) {
     const token = utils.jwtFrom(req)
@@ -86,7 +133,12 @@ export const authenticatedUsers: IAuthenticatedUsers = {
   },
   updateFrom: function (req: Request, user: ResponseWithUser) {
     const token = utils.jwtFrom(req)
-    this.put(token, user)
+    if (token) {
+      this.put(token, user)
+    }
+  },
+  isRevoked: function (token?: string) {
+    return token ? this.revokedTokens.has(utils.unquote(token)) : false
   }
 }
 
@@ -131,11 +183,7 @@ export const redirectAllowlist = new Set([
 ])
 
 export const isRedirectAllowed = (url: string) => {
-  let allowed = false
-  for (const allowedUrl of redirectAllowlist) {
-    allowed = allowed || url.includes(allowedUrl) // vuln-code-snippet vuln-line redirectChallenge
-  }
-  return allowed
+  return redirectAllowlist.has(url) // vuln-code-snippet vuln-line redirectChallenge
 }
 // vuln-code-snippet end redirectCryptoCurrencyChallenge redirectChallenge
 
@@ -185,7 +233,7 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
+  if (token && !authenticatedUsers.isRevoked(token) && authenticatedUsers.get(token) === undefined) {
     jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)

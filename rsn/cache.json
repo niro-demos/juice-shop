@@ -896,15 +896,29 @@
 	},
 	"redirectChallenge_1.ts": {
 		"added": [],
-		"removed": []
+		"removed": [
+			14,
+			15,
+			16,
+			17
+		]
 	},
 	"redirectChallenge_2.ts": {
 		"added": [],
-		"removed": []
+		"removed": [
+			14,
+			15,
+			16,
+			17
+		]
 	},
 	"redirectChallenge_3.ts": {
 		"added": [],
 		"removed": [
+			14,
+			15,
+			16,
+			17,
 			18,
 			19,
 			20,
@@ -921,24 +935,44 @@
 		]
 	},
 	"redirectChallenge_4_correct.ts": {
-		"added": [],
-		"removed": []
+		"added": [
+			14
+		],
+		"removed": [
+			14
+		]
 	},
 	"redirectCryptoCurrencyChallenge_1.ts": {
-		"added": [],
-		"removed": []
+		"added": [
+			14
+		],
+		"removed": [
+			14
+		]
 	},
 	"redirectCryptoCurrencyChallenge_2.ts": {
-		"added": [],
-		"removed": []
+		"added": [
+			14
+		],
+		"removed": [
+			14
+		]
 	},
 	"redirectCryptoCurrencyChallenge_3_correct.ts": {
-		"added": [],
-		"removed": []
+		"added": [
+			14
+		],
+		"removed": [
+			12
+		]
 	},
 	"redirectCryptoCurrencyChallenge_4.ts": {
-		"added": [],
-		"removed": []
+		"added": [
+			14
+		],
+		"removed": [
+			14
+		]
 	},
 	"registerAdminChallenge_1.ts": {
 		"added": [],
