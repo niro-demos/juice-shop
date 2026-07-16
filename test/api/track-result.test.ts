@@ -11,6 +11,17 @@ import { createTestApp } from './helpers/setup'
 
 let app: Express
 
+function hasOrderHistoryFields (item: any) {
+  return item !== undefined &&
+    typeof item === 'object' &&
+    typeof item.orderId === 'string' &&
+    (typeof item.email === 'string' ||
+      typeof item.totalPrice === 'number' ||
+      Array.isArray(item.products) ||
+      typeof item.delivered === 'boolean' ||
+      typeof item._id === 'string')
+}
+
 before(async () => {
   const result = await createTestApp()
   app = result.app
@@ -21,27 +32,21 @@ void describe('/rest/track-order/:id', () => {
     const res = await request(app)
       .get('/rest/track-order/5267-f9cd5882f54c75a3')
     assert.equal(res.status, 200)
+    assert.equal(res.body.status, 'success')
+    assert.equal(res.body.data[0].orderId, '5267-f9cd5882f54c75a3')
   })
 
-  void it('GET all orders by injecting into orderId', async () => {
+  void it('rejects tracking ids that inject query predicates', async () => {
     const res = await request(app)
-      .get('/rest/track-order/%27%20%7C%7C%20true%20%7C%7C%20%27')
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.ok(Array.isArray(res.body.data))
-    for (const item of res.body.data) {
-      assert.equal(typeof item.orderId, 'string')
-      assert.equal(typeof item.email, 'string')
-      assert.equal(typeof item.totalPrice, 'number')
-      assert.ok(Array.isArray(item.products))
-      for (const product of item.products) {
-        assert.equal(typeof product.quantity, 'number')
-        assert.equal(typeof product.name, 'string')
-        assert.equal(typeof product.price, 'number')
-        assert.equal(typeof product.total, 'number')
-      }
-      assert.equal(typeof item.eta, 'string')
-      assert.equal(typeof item._id, 'string')
-    }
+      .get('/rest/track-order/x%27%20%7C%7C%20true%20%7C%7C%20%27')
+    assert.equal(res.status, 400)
+    assert.equal(Array.isArray(res.body.data) && res.body.data.some(hasOrderHistoryFields), false)
+  })
+
+  void it('rejects tracking ids containing HTML before they reach the result page', async () => {
+    const res = await request(app)
+      .get('/rest/track-order/%3Cimg%20src%3Dx%20onerror%3D%22document.title%3D1%22%3E')
+    assert.equal(res.status, 400)
+    assert.equal(res.body.data, undefined)
   })
 })
