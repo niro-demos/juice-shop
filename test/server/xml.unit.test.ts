@@ -14,14 +14,15 @@ void describe('xml', () => {
     assert.match(result, /<root>hello<\/root>/)
   })
 
-  void it('should expand internal entities', async () => {
+  void it('should preserve internal entity references without expansion', async () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE root [
   <!ENTITY hello "world">
 ]>
 <root>&hello;</root>`
     const result = await parseXmlString(xml)
-    assert.match(result, /<root>world<\/root>/)
+    assert.match(result, /<root>&hello;<\/root>/)
+    assert.doesNotMatch(result, /<root>world<\/root>/)
   })
 
   void it('should throw error on malformed XML', async () => {

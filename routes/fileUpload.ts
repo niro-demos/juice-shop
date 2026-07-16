@@ -25,13 +25,20 @@ function ensureFileIsPassed ({ file }: Request, res: Response, next: NextFunctio
 }
 
 async function extractZipBuffer (buffer: Buffer) {
+  const uploadRoot = path.resolve('uploads/complaints')
   const directory = await unzipper.Open.buffer(buffer)
   for (const entry of directory.files) {
-    const fileName = entry.path
-    const absolutePath = path.resolve('uploads/complaints/' + fileName)
-    challengeUtils.solveIf(challenges.fileWriteChallenge, () => { return absolutePath === path.resolve('ftp/legal.md') })
-    if (absolutePath.includes(path.resolve('.'))) {
-      await pipeline(entry.stream(), fs.createWriteStream('uploads/complaints/' + fileName))
+    const outputPath = path.resolve(uploadRoot, entry.path)
+    const relativePath = path.relative(uploadRoot, outputPath)
+    if (relativePath === '' || relativePath === '..' || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
+      throw new Error(`Invalid ZIP entry path: ${entry.path}`)
+    }
+    challengeUtils.solveIf(challenges.fileWriteChallenge, () => { return outputPath === path.resolve('ftp/legal.md') })
+    if (entry.type === 'Directory') {
+      await fs.promises.mkdir(outputPath, { recursive: true })
+    } else {
+      await fs.promises.mkdir(path.dirname(outputPath), { recursive: true })
+      await pipeline(entry.stream(), fs.createWriteStream(outputPath))
     }
   }
 }
@@ -44,7 +51,11 @@ async function handleZipFileUpload ({ file }: Request, res: Response, next: Next
   if (((file?.buffer) != null) && utils.isChallengeEnabled(challenges.fileWriteChallenge)) {
     try {
       await extractZipBuffer(file.buffer)
-    } catch (err) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      if (utils.startsWith(errorMessage, 'Invalid ZIP entry path:')) {
+        res.status(400)
+      }
       next(err)
       return
     }
@@ -70,13 +81,14 @@ function checkFileType ({ file }: Request, res: Response, next: NextFunction) {
 async function handleXmlUpload ({ file }: Request, res: Response, next: NextFunction) {
   if (utils.endsWith(file?.originalname.toLowerCase(), '.xml')) {
     challengeUtils.solveIf(challenges.deprecatedInterfaceChallenge, () => { return true })
+    const deprecatedUploadError = new Error('B2B customer complaints via file upload have been deprecated for security reasons (' + file?.originalname + ')')
     if (((file?.buffer) != null) && utils.isChallengeEnabled(challenges.deprecatedInterfaceChallenge)) { // XXE attacks in Docker/Heroku containers regularly cause "segfault" crashes
       const data = file.buffer.toString()
       try {
         const xmlString = await parseXmlString(data)
         challengeUtils.solveIf(challenges.xxeFileDisclosureChallenge, () => { return (utils.matchesEtcPasswdFile(xmlString) || utils.matchesSystemIniFile(xmlString)) })
         res.status(410)
-        next(new Error('B2B customer complaints via file upload have been deprecated for security reasons: ' + utils.trunc(xmlString, 400) + ' (' + file.originalname + ')'))
+        next(deprecatedUploadError)
       } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : String(err)
         if (utils.contains(errorMessage, 'Script execution timed out')) {
@@ -87,12 +99,12 @@ async function handleXmlUpload ({ file }: Request, res: Response, next: NextFunc
           next(new Error('Sorry, we are temporarily not available! Please try again later.'))
         } else {
           res.status(410)
-          next(new Error('B2B customer complaints via file upload have been deprecated for security reasons: ' + errorMessage + ' (' + file.originalname + ')'))
+          next(deprecatedUploadError)
         }
       }
     } else {
       res.status(410)
-      next(new Error('B2B customer complaints via file upload have been deprecated for security reasons (' + file?.originalname + ')'))
+      next(deprecatedUploadError)
     }
   }
   next()

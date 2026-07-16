@@ -154,6 +154,19 @@ void describe('/profile/image/url (with local mock server)', () => {
   let mockPort: number
   let token: string
   let userId: number
+  let mockRequests: string[]
+  let imageBuffer: Buffer
+  const loopbackProof = 'loopback-only profile image marker'
+
+  async function withMockedFetch (handler: typeof fetch, test: () => Promise<void>) {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = handler
+    try {
+      await test()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  }
 
   before(async () => {
     const { token: userToken } = await login(app, {
@@ -163,15 +176,21 @@ void describe('/profile/image/url (with local mock server)', () => {
     token = userToken
     userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).data.id
 
-    const imageBuffer = fs.readFileSync(path.resolve(__dirname, '../files/validProfileImage.jpg'))
+    imageBuffer = fs.readFileSync(path.resolve(__dirname, '../files/validProfileImage.jpg'))
 
+    mockRequests = []
     mockServer = http.createServer((req, res) => {
+      mockRequests.push(req.url ?? '')
       if (req.url?.includes('non-ok')) {
         res.statusCode = 404
         res.end()
       } else if (req.url?.includes('no-body')) {
         res.statusCode = 204
         res.end()
+      } else if (req.url?.includes('loopback-proof')) {
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'image/jpeg')
+        res.end(loopbackProof)
       } else {
         res.statusCode = 200
         res.setHeader('Content-Type', 'image/jpeg')
@@ -188,60 +207,109 @@ void describe('/profile/image/url (with local mock server)', () => {
     })
   })
 
-  void it('POST with non-OK response falls back to storing URL as profile image', async () => {
-    const res = await request(app)
-      .post('/profile/image/url')
-      .set('Cookie', `token=${token}`)
-      .field('imageUrl', `http://localhost:${mockPort}/non-ok.jpg`)
-      .redirects(0)
+  void it('POST with loopback URL does not fetch or publish server-side response', async () => {
+    const uploadPath = `frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg`
+    const previousRequestCount = mockRequests.length
+    fs.rmSync(uploadPath, { force: true })
 
-    assert.equal(res.status, 302)
+    try {
+      const res = await request(app)
+        .post('/profile/image/url')
+        .set('Cookie', `token=${token}`)
+        .field('imageUrl', `http://127.0.0.1:${mockPort}/loopback-proof.jpg`)
+        .redirects(0)
+
+      assert.equal(res.status, 400)
+      assert.equal(mockRequests.length, previousRequestCount)
+      assert.equal(fs.existsSync(uploadPath), false)
+    } finally {
+      fs.rmSync(uploadPath, { force: true })
+    }
   })
 
-  void it('POST with empty-body response (204) falls back to storing URL as profile image', async () => {
-    const res = await request(app)
-      .post('/profile/image/url')
-      .set('Cookie', `token=${token}`)
-      .field('imageUrl', `http://localhost:${mockPort}/no-body.jpg`)
-      .redirects(0)
+  void it('POST with non-OK response from public URL falls back to storing URL as profile image', async () => {
+    await withMockedFetch(async () => new Response(null, { status: 404 }), async () => {
+      const res = await request(app)
+        .post('/profile/image/url')
+        .set('Cookie', `token=${token}`)
+        .field('imageUrl', 'https://cataas.com/non-ok.jpg')
+        .redirects(0)
 
-    assert.equal(res.status, 302)
+      assert.equal(res.status, 302)
+    })
   })
 
-  void it('POST with valid response writes file and redirects to profile', async () => {
-    const res = await request(app)
-      .post('/profile/image/url')
-      .set('Cookie', `token=${token}`)
-      .field('imageUrl', `http://localhost:${mockPort}/photo.jpg`)
-      .redirects(0)
+  void it('POST with empty-body response (204) from public URL falls back to storing URL as profile image', async () => {
+    await withMockedFetch(async () => new Response(null, { status: 204 }), async () => {
+      const res = await request(app)
+        .post('/profile/image/url')
+        .set('Cookie', `token=${token}`)
+        .field('imageUrl', 'https://cataas.com/no-body.jpg')
+        .redirects(0)
 
-    assert.equal(res.status, 302)
-    assert.ok(res.headers.location?.endsWith('/profile'))
+      assert.equal(res.status, 302)
+    })
   })
 
-  void it('POST with PNG URL extension saves file using PNG extension', async () => {
-    await request(app)
-      .post('/profile/image/url')
-      .set('Cookie', `token=${token}`)
-      .field('imageUrl', `http://localhost:${mockPort}/photo.png`)
-      .redirects(0)
+  void it('POST with valid public response writes file and redirects to profile', async () => {
+    const uploadPath = `frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg`
+    fs.rmSync(uploadPath, { force: true })
 
-    assert.ok(
-      fs.existsSync(`frontend/dist/frontend/assets/public/images/uploads/${userId}.png`),
-      `Expected file frontend/dist/frontend/assets/public/images/uploads/${userId}.png to exist`
-    )
+    await withMockedFetch(async () => new Response(imageBuffer, {
+      status: 200,
+      headers: { 'Content-Type': 'image/jpeg' }
+    }), async () => {
+      const res = await request(app)
+        .post('/profile/image/url')
+        .set('Cookie', `token=${token}`)
+        .field('imageUrl', 'https://cataas.com/photo.jpg')
+        .redirects(0)
+
+      assert.equal(res.status, 302)
+      assert.ok(res.headers.location?.endsWith('/profile'))
+      assert.equal(fs.existsSync(uploadPath), true)
+    })
   })
 
-  void it('POST with unrecognised URL extension defaults to JPG extension', async () => {
-    await request(app)
-      .post('/profile/image/url')
-      .set('Cookie', `token=${token}`)
-      .field('imageUrl', `http://localhost:${mockPort}/photo.bmp`)
-      .redirects(0)
+  void it('POST with public PNG URL extension saves file using PNG extension', async () => {
+    const uploadPath = `frontend/dist/frontend/assets/public/images/uploads/${userId}.png`
+    fs.rmSync(uploadPath, { force: true })
 
-    assert.ok(
-      fs.existsSync(`frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg`),
-      `Expected file frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg to exist`
-    )
+    await withMockedFetch(async () => new Response(imageBuffer, {
+      status: 200,
+      headers: { 'Content-Type': 'image/png' }
+    }), async () => {
+      await request(app)
+        .post('/profile/image/url')
+        .set('Cookie', `token=${token}`)
+        .field('imageUrl', 'https://cataas.com/photo.png')
+        .redirects(0)
+
+      assert.ok(
+        fs.existsSync(uploadPath),
+        `Expected file ${uploadPath} to exist`
+      )
+    })
+  })
+
+  void it('POST with public unrecognised URL extension defaults to JPG extension', async () => {
+    const uploadPath = `frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg`
+    fs.rmSync(uploadPath, { force: true })
+
+    await withMockedFetch(async () => new Response(imageBuffer, {
+      status: 200,
+      headers: { 'Content-Type': 'image/bmp' }
+    }), async () => {
+      await request(app)
+        .post('/profile/image/url')
+        .set('Cookie', `token=${token}`)
+        .field('imageUrl', 'https://cataas.com/photo.bmp')
+        .redirects(0)
+
+      assert.ok(
+        fs.existsSync(uploadPath),
+        `Expected file ${uploadPath} to exist`
+      )
+    })
   })
 })
