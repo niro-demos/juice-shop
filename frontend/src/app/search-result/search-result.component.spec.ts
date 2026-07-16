@@ -215,10 +215,12 @@ describe('SearchResultComponent', () => {
         expect(component.dataSource.filter).toEqual('product search')
     })
 
-    it('should pass the search query as trusted HTML', () => {
-        activatedRoute.setQueryParameter('<script>scripttag</script>')
+    it('should not pass the search query as trusted HTML', () => {
+        sanitizer.bypassSecurityTrustHtml.mockClear()
+        activatedRoute.setQueryParameter('<img src=x onerror="alert(1)">')
         component.filterTable()
-        expect(sanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith('<script>scripttag</script>')
+        expect(component.searchValue).toBe('<img src=x onerror="alert(1)">')
+        expect(sanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalled()
     })
 
     describe('template rendering', () => {

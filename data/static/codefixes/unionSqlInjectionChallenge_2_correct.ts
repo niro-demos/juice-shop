@@ -2,18 +2,23 @@ export function searchProducts () {
   return (req: Request, res: Response, next: NextFunction) => {
     let criteria: any = req.query.q === 'undefined' ? '' : req.query.q ?? ''
     criteria = (criteria.length <= 200) ? criteria : criteria.substring(0, 200)
-    models.sequelize.query(
-        `SELECT * FROM Products WHERE ((name LIKE '%:criteria%' OR description LIKE '%:criteria%') AND deletedAt IS NULL) ORDER BY name`,
-        { replacements: { criteria } }
-      ).then(([products]: any) => {
-        const dataString = JSON.stringify(products)
+    ProductModel.findAll({
+      where: {
+        [Op.or]: [
+          { name: { [Op.like]: `%${criteria}%` } },
+          { description: { [Op.like]: `%${criteria}%` } }
+        ]
+      },
+      order: [['name', 'ASC']]
+    })
+      .then((products: ProductModel[]) => {
         for (let i = 0; i < products.length; i++) {
           products[i].name = req.__(products[i].name)
           products[i].description = req.__(products[i].description)
         }
         res.json(utils.queryResultToJson(products))
-      }).catch((error: ErrorWithParent) => {
-        next(error.parent)
+      }).catch((error: Error) => {
+        next(error)
       })
   }
 }

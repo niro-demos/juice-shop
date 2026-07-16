@@ -669,27 +669,59 @@
 		]
 	},
 	"dbSchemaChallenge_1.ts": {
-		"added": [],
-		"removed": []
-	},
-	"dbSchemaChallenge_2_correct.ts": {
 		"added": [
-			6
+			6,
+			7,
+			8,
+			9,
+			10,
+			11,
+			12,
+			13,
+			14,
+			20,
+			21
 		],
 		"removed": [
 			6,
 			7,
-			8
+			11,
+			12
+		]
+	},
+	"dbSchemaChallenge_2_correct.ts": {
+		"added": [
+			24
+		],
+		"removed": [
+			24
 		]
 	},
 	"dbSchemaChallenge_3.ts": {
-		"added": [],
+		"added": [
+			6,
+			7,
+			8,
+			9,
+			10,
+			11,
+			12,
+			13,
+			14,
+			20,
+			21
+		],
 		"removed": [
 			1,
 			2,
 			6,
 			7,
-			8
+			8,
+			9,
+			10,
+			11,
+			11,
+			12
 		]
 	},
 	"directoryListingChallenge_1_correct.ts": {
@@ -728,23 +760,28 @@
 	},
 	"forgedReviewChallenge_1.ts": {
 		"added": [
-			6
+			14,
+			25
 		],
 		"removed": [
-			6
+			14,
+			24
 		]
 	},
 	"forgedReviewChallenge_2_correct.ts": {
-		"added": [],
-		"removed": []
+		"added": [
+			25
+		],
+		"removed": [
+			25
+		]
 	},
 	"forgedReviewChallenge_3.ts": {
 		"added": [
-			6,
-			7
+			25
 		],
 		"removed": [
-			6
+			25
 		]
 	},
 	"localXssChallenge_1.ts": {
@@ -864,34 +901,35 @@
 	},
 	"noSqlReviewsChallenge_1.ts": {
 		"added": [
-			6
-		],
-		"removed": [
-			4,
-			6,
 			8,
 			9,
-			6
+			25
+		],
+		"removed": [
+			8,
+			9,
+			10,
+			24
 		]
 	},
 	"noSqlReviewsChallenge_2.ts": {
 		"added": [
-			6
+			8,
+			9,
+			10,
+			11,
+			25
 		],
 		"removed": [
-			6
+			22
 		]
 	},
 	"noSqlReviewsChallenge_3_correct.ts": {
 		"added": [
-			6
+			25
 		],
 		"removed": [
-			4,
-			6,
-			8,
-			9,
-			6
+			25
 		]
 	},
 	"redirectChallenge_1.ts": {
@@ -1276,26 +1314,59 @@
 		]
 	},
 	"unionSqlInjectionChallenge_1.ts": {
-		"added": [],
-		"removed": []
-	},
-	"unionSqlInjectionChallenge_2_correct.ts": {
 		"added": [
-			6
+			6,
+			7,
+			8,
+			9,
+			10,
+			11,
+			12,
+			13,
+			14,
+			20,
+			21
 		],
 		"removed": [
 			6,
 			7,
-			8
+			8,
+			11,
+			12
+		]
+	},
+	"unionSqlInjectionChallenge_2_correct.ts": {
+		"added": [
+			24
+		],
+		"removed": [
+			24
 		]
 	},
 	"unionSqlInjectionChallenge_3.ts": {
-		"added": [],
+		"added": [
+			6,
+			7,
+			8,
+			9,
+			10,
+			11,
+			12,
+			13,
+			14,
+			20,
+			21
+		],
 		"removed": [
 			6,
 			7,
 			8,
-			9
+			9,
+			10,
+			11,
+			12,
+			11,
+			12
 		]
 	},
 	"weakPasswordChallenge_1_correct.ts": {
