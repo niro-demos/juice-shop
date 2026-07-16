@@ -17,7 +17,7 @@ export function orderHistory () {
       const order = await ordersCollection.find({ email: updatedEmail })
       res.status(200).json({ status: 'success', data: order })
     } else {
-      next(new Error('Blocked illegal activity by ' + req.socket.remoteAddress))
+      res.status(401).json({ status: 'error', message: 'Unauthorized' })
     }
   }
 }

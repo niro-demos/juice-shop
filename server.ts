@@ -83,7 +83,6 @@ import { retrieveBasket } from './routes/basket'
 import { searchProducts } from './routes/search'
 import { trackOrder } from './routes/trackOrder'
 import { saveLoginIp } from './routes/saveLoginIp'
-import { serveKeyFiles } from './routes/keyServer'
 import * as basketItems from './routes/basketItems'
 import { performRedirect } from './routes/redirect'
 import { serveEasterEgg } from './routes/easterEgg'
@@ -91,8 +90,6 @@ import { getLanguageList } from './routes/languages'
 import { getUserProfile } from './routes/userProfile'
 import { serveAngularClient } from './routes/angular'
 import { resetPassword } from './routes/resetPassword'
-import { serveLogFiles } from './routes/logfileServer'
-import { servePublicFiles } from './routes/fileServer'
 import { addMemory, getMemories } from './routes/memory'
 import { changePassword } from './routes/changePassword'
 import { countryMapping } from './routes/countryMapping'
@@ -109,7 +106,6 @@ import { updateUserProfile } from './routes/updateUserProfile'
 import { getVideo, promotionVideo } from './routes/videoHandler'
 import { likeProductReviews } from './routes/likeProductReviews'
 import { repeatNotification } from './routes/repeatNotification'
-import { serveQuarantineFiles } from './routes/quarantineServer'
 import { showProductReviews } from './routes/showProductReviews'
 import { nftMintListener, walletNFTVerify } from './routes/nftMint'
 import { createProductReviews } from './routes/createProductReviews'
@@ -129,10 +125,6 @@ import { ensureFileIsPassed, handleZipFileUpload, checkUploadSize, checkFileType
 
 const app = express()
 const server = new http.Server(app)
-
-// errorhandler requires us from overwriting a string property on it's module which is a big no-no with esmodules :/
-
-const errorhandler = require('errorhandler')
 
 const startTime = Date.now()
 
@@ -264,23 +256,22 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     next()
   }
 
+  const denyPublicFileCollection = (_req: Request, res: Response) => {
+    res.sendStatus(404)
+  }
+
   // vuln-code-snippet start directoryListingChallenge accessLogDisclosureChallenge
   /* /ftp directory browsing and file download */ // vuln-code-snippet neutral-line directoryListingChallenge
-  app.use('/ftp', serveIndexMiddleware, serveIndex('ftp', { icons: true })) // vuln-code-snippet vuln-line directoryListingChallenge
-  app.use('/ftp(?!/quarantine)/:file', servePublicFiles()) // vuln-code-snippet vuln-line directoryListingChallenge
-  app.use('/ftp/quarantine/:file', serveQuarantineFiles()) // vuln-code-snippet neutral-line directoryListingChallenge
+  app.use('/ftp', denyPublicFileCollection) // vuln-code-snippet vuln-line directoryListingChallenge
 
   app.use('/.well-known', serveIndexMiddleware, serveIndex('.well-known', { icons: true, view: 'details' }))
   app.use('/.well-known', express.static('.well-known'))
 
   /* /encryptionkeys directory browsing */
-  app.use('/encryptionkeys', serveIndexMiddleware, serveIndex('encryptionkeys', { icons: true, view: 'details' }))
-  app.use('/encryptionkeys/:file', serveKeyFiles())
+  app.use('/encryptionkeys', denyPublicFileCollection)
 
   /* /logs directory browsing */ // vuln-code-snippet neutral-line accessLogDisclosureChallenge
-  app.use('/support/logs', serveIndexMiddleware, serveIndex('logs', { icons: true, view: 'details' })) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
-  app.use('/support/logs', verify.accessControlChallenges()) // vuln-code-snippet hide-line
-  app.use('/support/logs/:file', serveLogFiles()) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
+  app.use('/support/logs', denyPublicFileCollection) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
 
   /* Swagger documentation for B2B v2 endpoints */
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument))
@@ -360,14 +351,14 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* Feedbacks: GET allowed for feedback carousel, POST allowed in order to provide feedback without being logged in */
   app.use('/api/Feedbacks/:id', security.isAuthorized())
   /* Users: Only POST is allowed in order to register a new user */
-  app.get('/api/Users', security.isAuthorized())
+  app.get('/api/Users', security.isAuthorized(), security.isAdmin())
   app.route('/api/Users/:id')
-    .get(security.isAuthorized())
+    .get(security.isAuthorized(), security.isAdmin())
     .put(security.denyAll())
     .delete(security.denyAll())
   /* Products: Only GET is allowed in order to view products */ // vuln-code-snippet neutral-line changeProductChallenge
-  app.post('/api/Products', security.isAuthorized()) // vuln-code-snippet neutral-line changeProductChallenge
-  // app.put('/api/Products/:id', security.isAuthorized()) // vuln-code-snippet vuln-line changeProductChallenge
+  app.post('/api/Products', security.isAuthorized(), security.isAdmin()) // vuln-code-snippet neutral-line changeProductChallenge
+  app.put('/api/Products/:id', security.isAuthorized(), security.isAdmin()) // vuln-code-snippet vuln-line changeProductChallenge
   app.delete('/api/Products/:id', security.denyAll())
   /* Challenges: GET list of challenges allowed. Everything else forbidden entirely */
   app.post('/api/Challenges', security.denyAll())
@@ -379,13 +370,13 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     .delete(security.denyAll())
   /* Complaints: POST and GET allowed when logged in only */
   app.get('/api/Complaints', security.isAuthorized())
-  app.post('/api/Complaints', security.isAuthorized())
+  app.post('/api/Complaints', security.isAuthorized(), security.appendUserId())
   app.use('/api/Complaints/:id', security.denyAll())
   /* Recycles: POST and GET allowed when logged in only */
   app.get('/api/Recycles', recycles.blockRecycleItems())
-  app.post('/api/Recycles', security.isAuthorized())
+  app.post('/api/Recycles', security.isAuthorized(), security.appendUserId(), utils.asyncHandler(recycles.validateRecycleAddress()))
   /* Challenge evaluation before finale takes over */
-  app.get('/api/Recycles/:id', recycles.getRecycleItem())
+  app.get('/api/Recycles/:id', security.isAuthorized(), recycles.getRecycleItem())
   app.put('/api/Recycles/:id', security.denyAll())
   app.delete('/api/Recycles/:id', security.denyAll())
   /* SecurityQuestions: Only GET list of questions allowed. */
@@ -396,10 +387,20 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.use('/api/SecurityAnswers/:id', security.denyAll())
   /* REST API */
   app.use('/rest/user/authentication-details', security.isAuthorized())
+  app.use('/rest/user/authentication-details', security.isAdmin())
   app.use('/rest/basket/:id', security.isAuthorized())
   app.use('/rest/basket/:id/order', security.isAuthorized())
   /* Challenge evaluation before finale takes over */ // vuln-code-snippet hide-start
   app.post('/api/Feedbacks', verify.forgedFeedbackChallenge())
+  app.post('/api/Feedbacks', (req: Request, _res: Response, next: NextFunction) => {
+    const user = security.authenticatedUsers.get(utils.jwtFrom(req))
+    if (user?.data?.id) {
+      req.body.UserId = user.data.id
+    } else {
+      delete req.body.UserId
+    }
+    next()
+  })
   /* Captcha verification before finale takes over */
   app.post('/api/Feedbacks', utils.asyncHandler(verifyCaptcha()))
   /* Captcha Bypass challenge verification */
@@ -508,6 +509,12 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
 
     // create a wallet when a new user is registered using API
     if (name === 'User') { // vuln-code-snippet neutral-line registerAdminChallenge
+      resource.create.write.before((req: Request, res: Response, context: { attributes: { role?: string }, continue: any }) => {
+        if (Object.values(security.roles).includes(req.body.role) && req.body.role !== security.roles.customer) {
+          context.attributes.role = security.roles.customer
+        }
+        return context.continue
+      })
       resource.create.send.before((req: Request, res: Response, context: { instance: { id: any }, continue: any }) => { // vuln-code-snippet vuln-line registerAdminChallenge
         WalletModel.create({ UserId: context.instance.id }).catch((err: unknown) => {
           console.log(err)
@@ -516,6 +523,13 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
       }) // vuln-code-snippet neutral-line registerAdminChallenge
     } // vuln-code-snippet neutral-line registerAdminChallenge
     // vuln-code-snippet end registerAdminChallenge
+
+    if (name === 'Complaint') {
+      resource.list.fetch.before((req: Request, res: Response, context: { criteria: { UserId?: number }, continue: any }) => {
+        context.criteria.UserId = security.authenticatedUsers.tokenMap[utils.jwtFrom(req)].data.id
+        return context.continue
+      })
+    }
 
     // translate challenge descriptions on-the-fly
     if (name === 'Challenge') {
@@ -679,7 +693,19 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
 
   /* Error Handling */
   app.use(verify.errorHandlingChallenge())
-  app.use(errorhandler())
+  app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+    logger.error(err)
+    if (res.headersSent) {
+      next(err)
+      return
+    }
+    const errorWithStatus = err as Error & { status?: number }
+    const errorStatus = typeof errorWithStatus.status === 'number' ? errorWithStatus.status : undefined
+    const responseStatus = res.statusCode >= 400 ? res.statusCode : undefined
+    const status = errorStatus ?? responseStatus ?? 500
+    const safeStatus = status >= 400 && status < 600 ? status : 500
+    res.status(safeStatus).json({ error: safeStatus < 500 ? err.message : 'Internal Server Error' })
+  })
 }
 
 // Function called first to ensure that all the i18n files are reloaded successfully before other linked operations.
@@ -727,7 +753,6 @@ logger.info(`Entity models ${colors.bold(Object.keys(sequelize.models).length.to
 let metricsUpdateLoop: any
 const Metrics = metrics.observeMetrics() // vuln-code-snippet neutral-line exposedMetricsChallenge
 app.get('/metrics', utils.asyncHandler(metrics.serveMetrics())) // vuln-code-snippet vuln-line exposedMetricsChallenge
-errorhandler.title = `${config.get<string>('application.name')} (Express ${utils.version('express')})`
 
 export async function start (readyCallback?: () => void) {
   const datacreatorEnd = startupGauge.startTimer({ task: 'datacreator' })

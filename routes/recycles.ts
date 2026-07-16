@@ -5,6 +5,7 @@
 
 import { type Request, type Response } from 'express'
 import { RecycleModel } from '../models/recycle'
+import { AddressModel } from '../models/address'
 
 import * as utils from '../lib/utils'
 
@@ -23,4 +24,20 @@ export const getRecycleItem = () => (req: Request, res: Response) => {
 export const blockRecycleItems = () => (req: Request, res: Response) => {
   const errMsg = { err: 'Sorry, this endpoint is not supported.' }
   return res.send(utils.queryResultToJson(errMsg))
+}
+
+export const validateRecycleAddress = () => async (req: Request, res: Response, next: () => void) => {
+  const address = await AddressModel.findOne({
+    where: {
+      id: req.body.AddressId,
+      UserId: req.body.UserId
+    }
+  })
+
+  if (!address) {
+    res.status(403).json({ error: 'Malicious activity detected' })
+    return
+  }
+
+  next()
 }

@@ -31,7 +31,7 @@ void describe('/b2b/v2/orders', () => {
         })
 
       assert.equal(res.status, 500)
-      assert.ok(res.text.includes('Infinite loop detected - reached max iterations'))
+      assert.equal(res.body.error, 'Internal Server Error')
     })
 
     void it('POST busy spinning regex attack does not raise an error', async () => {

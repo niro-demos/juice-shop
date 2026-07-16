@@ -9,20 +9,25 @@ import request from 'supertest'
 import type { Express } from 'express'
 import config from 'config'
 import { createTestApp } from './helpers/setup'
+import { login } from './helpers/auth'
 import type { Product as ProductConfig } from '../../lib/config.schema'
 import { challenges } from '../../data/datacache'
-import * as security from '../../lib/insecurity'
 import * as utils from '../../lib/utils'
 
 const tamperingProductId = config.get<ProductConfig[]>('products').findIndex((product) => !!product.urlForProductTamperingChallenge) + 1
 
 let app: Express
-const authHeader = { Authorization: 'Bearer ' + security.authorize(), 'content-type': 'application/json' }
+let authHeader: Record<string, string>
 const jsonHeader = { 'content-type': 'application/json' }
 
 before(async () => {
   const result = await createTestApp()
   app = result.app
+  const { token } = await login(app, {
+    email: 'admin@juice-sh.op',
+    password: 'admin123'
+  })
+  authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
 }, { timeout: 60000 })
 
 void describe('/api/Products', () => {
@@ -96,16 +101,14 @@ void describe('/api/Products/:id', () => {
     assert.equal(res.body.message, 'Not Found')
   })
 
-  void it('PUT update existing product is possible due to Missing Function-Level Access Control vulnerability', async () => {
+  void it('PUT update existing product is forbidden via public API', async () => {
     const res = await request(app)
       .put('/api/Products/' + tamperingProductId)
       .set(jsonHeader)
       .send({
         description: '<a href="http://kimminich.de" target="_blank">More...</a>'
       })
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(res.body.data.description, '<a href="http://kimminich.de" target="_blank">More...</a>')
+    assert.equal(res.status, 401)
   })
 
   void it('DELETE existing product is forbidden via public API', async () => {

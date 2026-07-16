@@ -8,14 +8,34 @@ import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
 import { createTestApp } from './helpers/setup'
-import * as security from '../../lib/insecurity'
+import { login } from './helpers/auth'
 
 let app: Express
-const authHeader = { Authorization: 'Bearer ' + security.authorize(), 'content-type': 'application/json' }
+let authHeader: Record<string, string>
+let addressId: number
 
 before(async () => {
   const result = await createTestApp()
   app = result.app
+  const { token } = await login(app, {
+    email: 'jim@juice-sh.op',
+    password: 'ncc-1701'
+  })
+  authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+  const address = await request(app)
+    .post('/api/Addresss')
+    .set(authHeader)
+    .send({
+      fullName: 'Recycle Test User',
+      mobileNum: 7100000000,
+      zipCode: 'RCYCL',
+      streetAddress: '1 Recycle Street',
+      city: 'Test City',
+      state: 'CA',
+      country: 'USA'
+    })
+  assert.equal(address.status, 201)
+  addressId = address.body.data.id
 }, { timeout: 60000 })
 
 void describe('/api/Recycles', () => {
@@ -25,13 +45,15 @@ void describe('/api/Recycles', () => {
       .set(authHeader)
       .send({
         quantity: 200,
-        AddressId: '1',
+        AddressId: String(addressId),
         isPickup: true,
         date: '2017-05-31'
       })
     assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
     assert.equal(typeof res.body.data.id, 'number')
+    assert.equal(typeof res.body.data.UserId, 'number')
+    assert.equal(res.body.data.AddressId, addressId)
     assert.equal(typeof res.body.data.createdAt, 'string')
     assert.equal(typeof res.body.data.updatedAt, 'string')
   })
@@ -44,20 +66,22 @@ void describe('/api/Recycles', () => {
     assert.equal(res.body.data.err, 'Sorry, this endpoint is not supported.')
   })
 
-  void it('Will GET existing recycle from this endpoint', async () => {
+  void it('Will GET existing recycle from this endpoint when authenticated', async () => {
     // First create a recycle so we can GET it
-    await request(app)
+    const created = await request(app)
       .post('/api/Recycles')
       .set(authHeader)
       .send({
         quantity: 100,
-        AddressId: '1',
+        AddressId: String(addressId),
         isPickup: false,
         date: '2017-06-01'
       })
+    assert.equal(created.status, 201)
 
     const res = await request(app)
-      .get('/api/Recycles/1')
+      .get('/api/Recycles/' + created.body.data.id)
+      .set(authHeader)
     assert.equal(res.status, 200)
     assert.ok(res.headers['content-type']?.includes('application/json'))
     const items = res.body.data
@@ -72,6 +96,12 @@ void describe('/api/Recycles', () => {
       assert.equal(typeof item.createdAt, 'string')
       assert.equal(typeof item.updatedAt, 'string')
     }
+  })
+
+  void it('GET existing recycle is forbidden via public API', async () => {
+    const res = await request(app)
+      .get('/api/Recycles/1')
+    assert.equal(res.status, 401)
   })
 
   void it('PUT update existing recycle is forbidden', async () => {

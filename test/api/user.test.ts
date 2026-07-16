@@ -10,7 +10,6 @@ import type { Express } from 'express'
 import { createTestApp } from './helpers/setup'
 import { login } from './helpers/auth'
 import { challenges } from '../../data/datacache'
-import * as security from '../../lib/insecurity'
 import * as utils from '../../lib/utils'
 
 let app: Express
@@ -19,7 +18,11 @@ let authHeader: Record<string, string>
 before(async () => {
   const result = await createTestApp()
   app = result.app
-  authHeader = { Authorization: `Bearer ${security.authorize()}`, 'content-type': 'application/json' }
+  const { token } = await login(app, {
+    email: 'admin@juice-sh.op',
+    password: 'admin123'
+  })
+  authHeader = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
 }, { timeout: 60000 })
 
 const jsonHeader = { 'content-type': 'application/json' }
@@ -59,7 +62,7 @@ void describe('/api/Users', () => {
     assert.equal(res.body.data.password, undefined)
   })
 
-  void it('POST new admin', async () => {
+  void it('POST new user ignores admin role', async () => {
     const res = await request(app)
       .post('/api/Users')
       .set(jsonHeader)
@@ -74,7 +77,7 @@ void describe('/api/Users', () => {
     assert.equal(typeof res.body.data.createdAt, 'string')
     assert.equal(typeof res.body.data.updatedAt, 'string')
     assert.equal(res.body.data.password, undefined)
-    assert.equal(res.body.data.role, 'admin')
+    assert.equal(res.body.data.role, 'customer')
   })
 
   void it('POST new blank user', async () => {
@@ -127,7 +130,7 @@ void describe('/api/Users', () => {
     assert.equal(res.body.data.password, undefined)
   })
 
-  void it('POST new deluxe user', async () => {
+  void it('POST new user ignores deluxe role', async () => {
     const res = await request(app)
       .post('/api/Users')
       .set(jsonHeader)
@@ -142,10 +145,10 @@ void describe('/api/Users', () => {
     assert.equal(typeof res.body.data.createdAt, 'string')
     assert.equal(typeof res.body.data.updatedAt, 'string')
     assert.equal(res.body.data.password, undefined)
-    assert.equal(res.body.data.role, 'deluxe')
+    assert.equal(res.body.data.role, 'customer')
   })
 
-  void it('POST new accounting user', async () => {
+  void it('POST new user ignores accounting role', async () => {
     const res = await request(app)
       .post('/api/Users')
       .set(jsonHeader)
@@ -160,7 +163,7 @@ void describe('/api/Users', () => {
     assert.equal(typeof res.body.data.createdAt, 'string')
     assert.equal(typeof res.body.data.updatedAt, 'string')
     assert.equal(res.body.data.password, undefined)
-    assert.equal(res.body.data.role, 'accounting')
+    assert.equal(res.body.data.role, 'customer')
   })
 
   void it('POST user not belonging to customer, deluxe, accounting, admin is forbidden', async () => {

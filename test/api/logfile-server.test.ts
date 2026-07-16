@@ -7,7 +7,6 @@ import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
-import * as utils from '../../lib/utils'
 import { createTestApp } from './helpers/setup'
 
 let app: Express
@@ -18,19 +17,17 @@ before(async () => {
 }, { timeout: 60000 })
 
 void describe('/support/logs/:file', () => {
-  void it('GET access log file for the current day', async () => {
+  void it('GET blocks access log file for the current day', async () => {
     const res = await request(app)
-      .get('/support/logs/access.log.' + utils.toISO8601(new Date()))
+      .get('/support/logs/access.log.2026-01-01')
 
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/octet-stream'))
+    assert.equal(res.status, 404)
   })
 
-  void it('GET log file whose name contains a forward slash fails with a 403 error', async () => {
+  void it('GET log file whose name contains a forward slash is blocked', async () => {
     const res = await request(app)
       .get('/support/logs/%2fetc%2fpasswd')
 
-    assert.equal(res.status, 403)
-    assert.ok(res.text.includes('Error: File names cannot contain forward slashes!'))
+    assert.equal(res.status, 404)
   })
 })

@@ -335,7 +335,7 @@ void describe('/rest/user/data-export', () => {
         .send({ format: '1' })
 
       assert.equal(res.status, 500)
-      assert.match(res.text, /Memory error/)
+      assert.equal(res.body.error, 'Internal Server Error')
     })
 
     void it('should return 500 if ordersCollection.find fails', async (t) => {
@@ -350,7 +350,7 @@ void describe('/rest/user/data-export', () => {
         .send({ format: '1' })
 
       assert.equal(res.status, 500)
-      assert.match(res.text, /Error retrieving orders/)
+      assert.equal(res.body.error, 'Internal Server Error')
     })
 
     void it('should return 500 if reviewsCollection.find fails', async (t) => {
@@ -365,7 +365,7 @@ void describe('/rest/user/data-export', () => {
         .send({ format: '1' })
 
       assert.equal(res.status, 500)
-      assert.match(res.text, /Error retrieving reviews/)
+      assert.equal(res.body.error, 'Internal Server Error')
     })
   })
 })

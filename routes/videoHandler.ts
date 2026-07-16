@@ -22,9 +22,17 @@ export const getVideo = () => {
     const fileSize = stat.size
     const range = req.headers.range
     if (range) {
+      if (!/^bytes=\d*-\d*$/.test(range)) {
+        res.status(416).json({ status: 'error', message: 'Invalid range' })
+        return
+      }
       const parts = range.replace(/bytes=/, '').split('-')
       const start = parseInt(parts[0], 10)
       const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || end >= fileSize) {
+        res.status(416).json({ status: 'error', message: 'Invalid range' })
+        return
+      }
       const chunksize = (end - start) + 1
       const file = fs.createReadStream(path, { start, end })
       const head = {

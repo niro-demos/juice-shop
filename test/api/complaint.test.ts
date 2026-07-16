@@ -8,14 +8,19 @@ import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
 import { createTestApp } from './helpers/setup'
-import * as security from '../../lib/insecurity'
+import { login } from './helpers/auth'
 
 let app: Express
-const authHeader = { Authorization: 'Bearer ' + security.authorize(), 'content-type': 'application/json' }
+let authHeader: Record<string, string>
 
 before(async () => {
   const result = await createTestApp()
   app = result.app
+  const { token } = await login(app, {
+    email: 'jim@juice-sh.op',
+    password: 'ncc-1701'
+  })
+  authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
 }, { timeout: 60000 })
 
 void describe('/api/Complaints', () => {
@@ -29,6 +34,7 @@ void describe('/api/Complaints', () => {
     assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
     assert.equal(typeof res.body.data.id, 'number')
+    assert.equal(typeof res.body.data.UserId, 'number')
     assert.equal(typeof res.body.data.createdAt, 'string')
     assert.equal(typeof res.body.data.updatedAt, 'string')
   })

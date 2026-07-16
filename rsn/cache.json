@@ -1,13 +1,15 @@
 {
 	"accessLogDisclosureChallenge_1_correct.ts": {
 		"added": [
-			16
+			12
 		],
 		"removed": []
 	},
 	"accessLogDisclosureChallenge_2.ts": {
 		"added": [],
-		"removed": []
+		"removed": [
+			12
+		]
 	},
 	"accessLogDisclosureChallenge_3.ts": {
 		"added": [],
@@ -40,28 +42,21 @@
 		"removed": []
 	},
 	"changeProductChallenge_1.ts": {
-		"added": [
-			48
-		],
+		"added": [],
 		"removed": []
 	},
 	"changeProductChallenge_2.ts": {
 		"added": [
-			18,
-			48
+			18
 		],
 		"removed": []
 	},
 	"changeProductChallenge_3_correct.ts": {
-		"added": [
-			48
-		],
+		"added": [],
 		"removed": []
 	},
 	"changeProductChallenge_4.ts": {
-		"added": [
-			48
-		],
+		"added": [],
 		"removed": []
 	},
 	"chatbotGreedyInjectionChallenge_1.ts": {
@@ -694,13 +689,15 @@
 	},
 	"directoryListingChallenge_1_correct.ts": {
 		"added": [
-			5
+			3
 		],
 		"removed": []
 	},
 	"directoryListingChallenge_2.ts": {
 		"added": [],
-		"removed": []
+		"removed": [
+			3
+		]
 	},
 	"directoryListingChallenge_3.ts": {
 		"added": [],
@@ -708,7 +705,10 @@
 	},
 	"directoryListingChallenge_4.ts": {
 		"added": [],
-		"removed": []
+		"removed": [
+			3,
+			4
+		]
 	},
 	"exposedMetricsChallenge_1.ts": {
 		"added": [],
@@ -717,8 +717,8 @@
 	"exposedMetricsChallenge_2.ts": {
 		"added": [
 			2,
-			17,
-			38
+			16,
+			37
 		],
 		"removed": []
 	},
@@ -941,8 +941,14 @@
 		"removed": []
 	},
 	"registerAdminChallenge_1.ts": {
-		"added": [],
-		"removed": []
+		"added": [
+			33,
+			34
+		],
+		"removed": [
+			33,
+			34
+		]
 	},
 	"registerAdminChallenge_2.ts": {
 		"added": [
@@ -950,21 +956,39 @@
 			28,
 			29,
 			30,
+			32,
 			33,
 			34,
-			35
+			35,
+			36,
+			37,
+			39,
+			40,
+			41
 		],
 		"removed": [
 			28
 		]
 	},
 	"registerAdminChallenge_3_correct.ts": {
-		"added": [],
-		"removed": []
+		"added": [
+			33,
+			34,
+			35
+		],
+		"removed": [
+			33
+		]
 	},
 	"registerAdminChallenge_4.ts": {
 		"added": [
-			5
+			5,
+			32,
+			33,
+			34,
+			35,
+			36,
+			37
 		],
 		"removed": [
 			5

@@ -18,7 +18,7 @@ void describe('redirect', () => {
 
   beforeEach(() => {
     req = { query: {} }
-    res = { redirect: mock.fn(), status: mock.fn() }
+    res = { redirect: mock.fn(), status: mock.fn(() => res), json: mock.fn() }
     next = mock.fn()
     save = () => ({
       then () { }
@@ -38,14 +38,15 @@ void describe('redirect', () => {
     }
   })
 
-  void it('should raise error for URL not on allowlist', () => {
+  void it('should return controlled error response for URL not on allowlist', () => {
     req.query.to = 'http://kimminich.de'
 
     performRedirect()(req, res, next)
 
     assert.equal(res.redirect.mock.calls.length, 0)
-    assert.equal(next.mock.calls.length, 1)
-    assert.ok(next.mock.calls[0].arguments[0] instanceof Error)
+    assert.equal(next.mock.calls.length, 0)
+    assert.equal(res.status.mock.calls[0].arguments[0], 406)
+    assert.deepEqual(res.json.mock.calls[0].arguments[0], { status: 'error', message: 'Unrecognized target URL for redirect' })
   })
 
   void it('redirecting to https://blockchain.info/address/1AbKfgvw9psQ41NbLi8kufDQTezwG8DRZm should solve the "redirectCryptoCurrencyChallenge"', () => {

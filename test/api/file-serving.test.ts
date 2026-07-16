@@ -10,7 +10,6 @@ import type { Express } from 'express'
 import config from 'config'
 import { createTestApp } from './helpers/setup'
 import type { Product as ProductConfig } from '../../lib/config.schema'
-import * as utils from '../../lib/utils'
 
 let app: Express
 
@@ -132,31 +131,29 @@ void describe('/public/images/padding', () => {
 })
 
 void describe('/encryptionkeys', () => {
-  void it('GET serves a directory listing', async () => {
+  void it('GET blocks directory listing', async () => {
     const res = await request(app)
       .get('/encryptionkeys')
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes('<title>listing directory /encryptionkeys</title>'))
+    assert.equal(res.status, 404)
+    assert.ok(!res.text.includes('<title>listing directory /encryptionkeys</title>'))
   })
 
-  void it('GET a non-existing file in will return a 404 error', async () => {
+  void it('GET a non-existing file returns a 404 error', async () => {
     const res = await request(app)
       .get('/encryptionkeys/doesnotexist.md')
     assert.equal(res.status, 404)
   })
 
-  void it('GET the Premium Content AES key', async () => {
+  void it('GET the Premium Content AES key is blocked', async () => {
     const res = await request(app)
       .get('/encryptionkeys/premium.key')
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 404)
   })
 
-  void it('GET a key file whose name contains a "/" fails with a 403 error', async () => {
+  void it('GET a key file whose name contains a "/" is blocked', async () => {
     const res = await request(app)
       .get('/encryptionkeys/%2fetc%2fos-release%2500.md')
-    assert.equal(res.status, 403)
-    assert.ok(res.text.includes('Error: File names cannot contain forward slashes!'))
+    assert.equal(res.status, 404)
   })
 })
 
@@ -201,10 +198,9 @@ void describe('Hidden URL', () => {
     assert.equal(res.status, 200)
   })
 
-  void it('GET folder containing access log files for "Access Log" challenge', async () => {
+  void it('GET folder containing access log files is blocked', async () => {
     const res = await request(app)
-      .get('/support/logs/access.log.' + utils.toISO8601(new Date()))
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/octet-stream'))
+      .get('/support/logs/access.log.2026-01-01')
+    assert.equal(res.status, 404)
   })
 })

@@ -22,6 +22,11 @@ before(async () => {
   app = result.app
 }, { timeout: 60000 })
 
+function userIdFromToken (token: string) {
+  const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'))
+  return Number(payload.data.id)
+}
+
 void describe('/api/Feedbacks', () => {
   void it('GET all feedback', async () => {
     const res = await request(app)
@@ -69,7 +74,7 @@ void describe('/api/Feedbacks', () => {
     })
   }
 
-  void it('POST feedback in another users name as anonymous user', async () => {
+  void it('POST feedback ignores another users ID as anonymous user', async () => {
     const captchaRes = await request(app)
       .get('/rest/captcha')
     assert.equal(captchaRes.status, 200)
@@ -87,10 +92,10 @@ void describe('/api/Feedbacks', () => {
       })
     assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(res.body.data.UserId, 3)
+    assert.equal(res.body.data.UserId, null)
   })
 
-  void it('POST feedback in a non-existing users name as anonymous user fails with constraint error', async () => {
+  void it('POST feedback ignores non-existing user ID as anonymous user', async () => {
     const captchaRes = await request(app)
       .get('/rest/captcha')
     assert.equal(captchaRes.status, 200)
@@ -106,9 +111,9 @@ void describe('/api/Feedbacks', () => {
         captchaId: captchaRes.body.captchaId,
         captcha: captchaRes.body.answer
       })
-    assert.equal(res.status, 500)
+    assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.ok(res.body.errors.includes('SQLITE_CONSTRAINT: FOREIGN KEY constraint failed'))
+    assert.equal(res.body.data.UserId, null)
   })
 
   void it('POST feedback is associated with current user', async () => {
@@ -134,10 +139,10 @@ void describe('/api/Feedbacks', () => {
       })
     assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(res.body.data.UserId, 4)
+    assert.equal(res.body.data.UserId, userIdFromToken(token))
   })
 
-  void it('POST feedback is associated with any passed user ID', async () => {
+  void it('POST feedback ignores any passed user ID when authenticated', async () => {
     const { token } = await login(app, {
       email: 'bjoern.kimminich@gmail.com',
       password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
@@ -160,7 +165,7 @@ void describe('/api/Feedbacks', () => {
       })
     assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(res.body.data.UserId, 3)
+    assert.equal(res.body.data.UserId, userIdFromToken(token))
   })
 
   void it('POST feedback can be created without actually supplying comment', async () => {

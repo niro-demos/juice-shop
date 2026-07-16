@@ -7,7 +7,6 @@ import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
-import config from 'config'
 import { createTestApp } from './helpers/setup'
 
 let app: Express
@@ -67,35 +66,28 @@ void describe('/redirect', () => {
     assert.equal(res.status, 302)
   })
 
-  void it('GET error message with information leakage when calling /redirect without query parameter', async () => {
+  void it('GET controlled error when calling /redirect without query parameter', async () => {
     const res = await request(app)
       .get('/redirect')
-    assert.equal(res.status, 500)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`<h1>${config.get<string>('application.name')} (Express`))
-    assert.ok(res.text.includes('TypeError'))
-    assert.ok(res.text.includes('of undefined'))
-    assert.ok(res.text.includes('&#39;includes&#39;'))
+    assert.ok([400, 401].includes(res.status))
+    assert.ok(res.headers['content-type']?.includes('application/json'))
+    assert.ok(!res.text.includes('TypeError'))
   })
 
-  void it('GET error message with information leakage when calling /redirect with unrecognized query parameter', async () => {
+  void it('GET controlled error when calling /redirect with unrecognized query parameter', async () => {
     const res = await request(app)
       .get('/redirect?x=y')
-    assert.equal(res.status, 500)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`<h1>${config.get<string>('application.name')} (Express`))
-    assert.ok(res.text.includes('TypeError'))
-    assert.ok(res.text.includes('of undefined'))
-    assert.ok(res.text.includes('&#39;includes&#39;'))
+    assert.equal(res.status, 400)
+    assert.ok(res.headers['content-type']?.includes('application/json'))
+    assert.equal(res.body.message, 'Missing redirect target')
   })
 
-  void it('GET error message hinting at allowlist validation when calling /redirect with an unrecognized "to" target', async () => {
+  void it('GET controlled error when calling /redirect with an unrecognized "to" target', async () => {
     const res = await request(app)
       .get('/redirect?to=whatever')
     assert.equal(res.status, 406)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`<h1>${config.get<string>('application.name')} (Express`))
-    assert.ok(res.text.includes('Unrecognized target URL for redirect: whatever'))
+    assert.ok(res.headers['content-type']?.includes('application/json'))
+    assert.equal(res.body.message, 'Unrecognized target URL for redirect')
   })
 
   void it('GET redirected to target URL in "to" parameter when a allow-listed URL is part of the query string', async () => {

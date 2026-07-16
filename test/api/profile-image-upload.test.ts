@@ -54,9 +54,7 @@ void describe('/profile/image/file', () => {
       .attach('file', file)
 
     assert.equal(res.status, 415)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`${config.get<string>('application.name')} (Express`))
-    assert.ok(res.text.includes('Error: Profile image upload does not accept this file type'))
+    assert.ok(res.body.error.startsWith('Profile image upload does not accept this file type'))
   })
 
   void it('POST profile image file forbidden for anonymous user', async () => {
@@ -67,8 +65,7 @@ void describe('/profile/image/file', () => {
       .attach('file', file)
 
     assert.equal(res.status, 500)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes('Error: Blocked illegal activity'))
+    assert.equal(res.body.error, 'Internal Server Error')
   })
 
   void it('POST profile image file rejected for unrecognizable file content', async () => {
@@ -83,8 +80,7 @@ void describe('/profile/image/file', () => {
       .attach('file', Buffer.from('not an image, just plain text content'), 'random.bin')
 
     assert.equal(res.status, 500)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes('Error: Illegal file type'))
+    assert.equal(res.body.error, 'Internal Server Error')
   })
 })
 
