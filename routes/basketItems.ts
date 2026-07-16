@@ -34,7 +34,9 @@ export function addBasketItem () {
     }
 
     const user = security.authenticatedUsers.from(req)
-    if (user && basketIds[0] && basketIds[0] !== 'undefined' && Number(user.bid) != Number(basketIds[0])) { // eslint-disable-line eqeqeq
+    if (user && basketIds.length !== 1) {
+      res.status(400).send('{\'error\' : \'Invalid BasketId\'}')
+    } else if (user && basketIds[0] && basketIds[0] !== 'undefined' && Number(user.bid) !== Number(basketIds[0])) {
       res.status(401).send('{\'error\' : \'Invalid BasketId\'}')
     } else {
       const basketItem = {
@@ -62,16 +64,31 @@ export function quantityCheckBeforeBasketItemAddition () {
     })
   }
 }
+export function validateBasketItemOwnership () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const user = security.authenticatedUsers.from(req)
+    const basketId = Number(req.body.BasketId)
+    if (!user?.bid || !Number.isInteger(basketId) || Number(user.bid) !== basketId) {
+      res.status(401).send('{\'error\' : \'Invalid BasketId\'}')
+      return
+    }
+    next()
+  }
+}
 export function quantityCheckBeforeBasketItemUpdate () {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const item = await BasketItemModel.findOne({ where: { id: req.params.id } })
       const user = security.authenticatedUsers.from(req)
+      if (item == null) {
+        throw new Error('No such item found!')
+      }
+      if (!user?.bid || Number(user.bid) !== Number(item.BasketId)) {
+        res.status(403).json({ error: 'Malicious activity detected' })
+        return
+      }
       challengeUtils.solveIf(challenges.basketManipulateChallenge, () => { return user && req.body.BasketId && user.bid != req.body.BasketId }) // eslint-disable-line eqeqeq
       if (req.body.quantity) {
-        if (item == null) {
-          throw new Error('No such item found!')
-        }
         void quantityCheck(req, res, next, item.ProductId, req.body.quantity)
       } else {
         next()
@@ -83,6 +100,10 @@ export function quantityCheckBeforeBasketItemUpdate () {
 }
 
 async function quantityCheck (req: Request, res: Response, next: NextFunction, id: number, quantity: number) {
+  if (!Number.isInteger(Number(quantity)) || Number(quantity) <= 0) {
+    res.status(400).json({ error: res.__('Invalid quantity.') })
+    return
+  }
   const product = await QuantityModel.findOne({ where: { ProductId: id } })
   if (product == null) {
     throw new Error('No such product found!')

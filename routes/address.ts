@@ -34,3 +34,15 @@ export function delAddressById () {
     }
   }
 }
+
+export function updateAddressById () {
+  return async (req: Request, res: Response) => {
+    const [updated] = await AddressModel.update(req.body, { where: { id: req.params.id, UserId: req.body.UserId } })
+    if (updated) {
+      const address = await AddressModel.findOne({ where: { id: req.params.id, UserId: req.body.UserId } })
+      res.status(200).json({ status: 'success', data: address })
+    } else {
+      res.status(400).json({ status: 'error', data: 'Malicious activity detected.' })
+    }
+  }
+}

@@ -13,10 +13,34 @@ import { UserModel } from '../models/user'
 import * as utils from '../lib/utils'
 import logger from '../lib/logger'
 
+function isBlockedImageUrl (rawUrl: string) {
+  try {
+    const url = new URL(rawUrl)
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return true
+    }
+    const hostname = url.hostname.toLowerCase()
+    return hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
+      hostname.startsWith('169.254.')
+  } catch {
+    return true
+  }
+}
+
 export function profileImageUrlUpload () {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (req.body.imageUrl !== undefined) {
       const url = req.body.imageUrl
+      if (isBlockedImageUrl(url)) {
+        res.status(400).json({ status: 'error', message: 'Image URL is not allowed.' })
+        return
+      }
       if (url.match(/(.)*solve\/challenges\/server-side(.)*/) !== null) req.app.locals.abused_ssrf_bug = true
       const loggedInUser = security.authenticatedUsers.get(req.cookies.token)
       if (loggedInUser) {

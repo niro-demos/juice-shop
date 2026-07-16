@@ -28,7 +28,7 @@ export function imageCaptchas () {
       }
       const imageCaptchaInstance = ImageCaptchaModel.build(imageCaptcha)
       await imageCaptchaInstance.save()
-      res.json(imageCaptcha)
+      res.json({ image: captcha.data, UserId: user.data.id })
     } catch (error) {
       res.status(400).send(res.__('Unable to create CAPTCHA. Please try again.'))
     }

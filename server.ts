@@ -274,13 +274,13 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.use('/.well-known', express.static('.well-known'))
 
   /* /encryptionkeys directory browsing */
-  app.use('/encryptionkeys', serveIndexMiddleware, serveIndex('encryptionkeys', { icons: true, view: 'details' }))
-  app.use('/encryptionkeys/:file', serveKeyFiles())
+  app.use('/encryptionkeys', security.isAuthorized(), security.isAdmin(), serveIndexMiddleware, serveIndex('encryptionkeys', { icons: true, view: 'details' }))
+  app.use('/encryptionkeys/:file', security.isAuthorized(), security.isAdmin(), serveKeyFiles())
 
   /* /logs directory browsing */ // vuln-code-snippet neutral-line accessLogDisclosureChallenge
-  app.use('/support/logs', serveIndexMiddleware, serveIndex('logs', { icons: true, view: 'details' })) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
+  app.use('/support/logs', security.isAuthorized(), security.isAdmin(), serveIndexMiddleware, serveIndex('logs', { icons: true, view: 'details' })) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
   app.use('/support/logs', verify.accessControlChallenges()) // vuln-code-snippet hide-line
-  app.use('/support/logs/:file', serveLogFiles()) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
+  app.use('/support/logs/:file', security.isAuthorized(), security.isAdmin(), serveLogFiles()) // vuln-code-snippet vuln-line accessLogDisclosureChallenge
 
   /* Swagger documentation for B2B v2 endpoints */
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument))
@@ -339,11 +339,11 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
 
   // vuln-code-snippet start resetPasswordMortyChallenge
   /* Rate limiting */
-  app.enable('trust proxy')
+  app.disable('trust proxy')
   app.use('/rest/user/reset-password', rateLimit({
     windowMs: 5 * 60 * 1000,
     max: 100,
-    keyGenerator ({ headers, ip }: { headers: any, ip: any }) { return headers['X-Forwarded-For'] ?? ip } // vuln-code-snippet vuln-line resetPasswordMortyChallenge
+    keyGenerator ({ ip }: { ip: any }) { return ip } // vuln-code-snippet vuln-line resetPasswordMortyChallenge
   }))
   // vuln-code-snippet end resetPasswordMortyChallenge
 
@@ -360,14 +360,14 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* Feedbacks: GET allowed for feedback carousel, POST allowed in order to provide feedback without being logged in */
   app.use('/api/Feedbacks/:id', security.isAuthorized())
   /* Users: Only POST is allowed in order to register a new user */
-  app.get('/api/Users', security.isAuthorized())
+  app.get('/api/Users', security.isAuthorized(), security.isAdmin())
   app.route('/api/Users/:id')
-    .get(security.isAuthorized())
+    .get(security.isAuthorized(), security.isAdmin())
     .put(security.denyAll())
     .delete(security.denyAll())
   /* Products: Only GET is allowed in order to view products */ // vuln-code-snippet neutral-line changeProductChallenge
-  app.post('/api/Products', security.isAuthorized()) // vuln-code-snippet neutral-line changeProductChallenge
-  // app.put('/api/Products/:id', security.isAuthorized()) // vuln-code-snippet vuln-line changeProductChallenge
+  app.post('/api/Products', security.isAuthorized(), security.isAdmin()) // vuln-code-snippet neutral-line changeProductChallenge
+  app.put('/api/Products/:id', security.isAuthorized(), security.isAdmin()) // vuln-code-snippet vuln-line changeProductChallenge
   app.delete('/api/Products/:id', security.denyAll())
   /* Challenges: GET list of challenges allowed. Everything else forbidden entirely */
   app.post('/api/Challenges', security.denyAll())
@@ -379,13 +379,13 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
     .delete(security.denyAll())
   /* Complaints: POST and GET allowed when logged in only */
   app.get('/api/Complaints', security.isAuthorized())
-  app.post('/api/Complaints', security.isAuthorized())
+  app.post('/api/Complaints', security.isAuthorized(), security.appendUserId())
   app.use('/api/Complaints/:id', security.denyAll())
   /* Recycles: POST and GET allowed when logged in only */
   app.get('/api/Recycles', recycles.blockRecycleItems())
-  app.post('/api/Recycles', security.isAuthorized())
+  app.post('/api/Recycles', security.isAuthorized(), security.appendUserId())
   /* Challenge evaluation before finale takes over */
-  app.get('/api/Recycles/:id', recycles.getRecycleItem())
+  app.get('/api/Recycles/:id', security.isAuthorized(), security.appendUserId(), recycles.getRecycleItem())
   app.put('/api/Recycles/:id', security.denyAll())
   app.delete('/api/Recycles/:id', security.denyAll())
   /* SecurityQuestions: Only GET list of questions allowed. */
@@ -393,12 +393,22 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.use('/api/SecurityQuestions/:id', security.denyAll())
   /* SecurityAnswers: Only POST of answer allowed. */
   app.get('/api/SecurityAnswers', security.denyAll())
+  app.post('/api/SecurityAnswers', security.isAuthorized(), security.appendUserId())
   app.use('/api/SecurityAnswers/:id', security.denyAll())
   /* REST API */
-  app.use('/rest/user/authentication-details', security.isAuthorized())
+  app.use('/rest/user/authentication-details', security.isAuthorized(), security.isAdmin())
   app.use('/rest/basket/:id', security.isAuthorized())
   app.use('/rest/basket/:id/order', security.isAuthorized())
   /* Challenge evaluation before finale takes over */ // vuln-code-snippet hide-start
+  app.post('/api/Feedbacks', (req: Request, res: Response, next: NextFunction) => {
+    const user = security.authenticatedUsers.from(req)
+    if (user?.data?.id) {
+      req.body.UserId = user.data.id
+    } else {
+      delete req.body.UserId
+    }
+    next()
+  })
   app.post('/api/Feedbacks', verify.forgedFeedbackChallenge())
   /* Captcha verification before finale takes over */
   app.post('/api/Feedbacks', utils.asyncHandler(verifyCaptcha()))
@@ -415,6 +425,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
         res.status(400).send(res.__('Invalid email/password cannot be empty'))
       }
     }
+    req.body.role = security.roles.customer
     next()
   })
   app.post('/api/Users', verify.registerAdminChallenge())
@@ -424,7 +435,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.use('/b2b/v2', security.isAuthorized())
   /* Check if the quantity is available in stock and limit per user not exceeded, then add item to basket */
   app.put('/api/BasketItems/:id', security.appendUserId(), utils.asyncHandler(basketItems.quantityCheckBeforeBasketItemUpdate()))
-  app.post('/api/BasketItems', security.appendUserId(), utils.asyncHandler(basketItems.quantityCheckBeforeBasketItemAddition()), utils.asyncHandler(basketItems.addBasketItem()))
+  app.post('/api/BasketItems', security.appendUserId(), utils.asyncHandler(basketItems.validateBasketItemOwnership()), utils.asyncHandler(basketItems.quantityCheckBeforeBasketItemAddition()), utils.asyncHandler(basketItems.addBasketItem()))
   /* Accounting users are allowed to check and update quantities */
   app.delete('/api/Quantitys/:id', security.denyAll())
   app.post('/api/Quantitys', security.denyAll())
@@ -441,13 +452,13 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.delete('/api/Cards/:id', security.appendUserId(), utils.asyncHandler(payment.delPaymentMethodById()))
   app.get('/api/Cards/:id', security.appendUserId(), utils.asyncHandler(payment.getPaymentMethodById()))
   /* PrivacyRequests: Only POST allowed for authenticated users */
-  app.post('/api/PrivacyRequests', security.isAuthorized())
+  app.post('/api/PrivacyRequests', security.appendUserId())
   app.get('/api/PrivacyRequests', security.denyAll())
   app.use('/api/PrivacyRequests/:id', security.denyAll())
 
   app.post('/api/Addresss', security.appendUserId())
   app.get('/api/Addresss', security.appendUserId(), utils.asyncHandler(address.getAddress()))
-  app.put('/api/Addresss/:id', security.appendUserId())
+  app.put('/api/Addresss/:id', security.appendUserId(), utils.asyncHandler(address.updateAddressById()))
   app.delete('/api/Addresss/:id', security.appendUserId(), utils.asyncHandler(address.delAddressById()))
   app.get('/api/Addresss/:id', security.appendUserId(), utils.asyncHandler(address.getAddressById()))
   app.get('/api/Deliverys', utils.asyncHandler(delivery.getDeliveryMethods()))
@@ -481,7 +492,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   finale.initialize({ app, sequelize: seq })
 
   const autoModels = [
-    { name: 'User', exclude: ['password', 'totpSecret'], model: UserModel },
+    { name: 'User', exclude: ['password', 'totpSecret', 'deluxeToken'], model: UserModel },
     { name: 'Product', exclude: [], model: ProductModel },
     { name: 'Feedback', exclude: [], model: FeedbackModel },
     { name: 'BasketItem', exclude: [], model: BasketItemModel },
@@ -600,9 +611,9 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.get('/rest/user/whoami', utils.asyncHandler(retrieveLoggedInUser()))
   app.get('/rest/user/authentication-details', utils.asyncHandler(authenticatedUsers()))
   app.get('/rest/products/search', utils.asyncHandler(searchProducts()))
-  app.get('/rest/basket/:id', utils.asyncHandler(retrieveBasket()))
-  app.post('/rest/basket/:id/checkout', placeOrder())
-  app.put('/rest/basket/:id/coupon/:coupon', utils.asyncHandler(applyCoupon()))
+  app.get('/rest/basket/:id', security.ownsBasket(), utils.asyncHandler(retrieveBasket()))
+  app.post('/rest/basket/:id/checkout', security.ownsBasket(), placeOrder())
+  app.put('/rest/basket/:id/coupon/:coupon', security.ownsBasket(), utils.asyncHandler(applyCoupon()))
   app.get('/rest/admin/application-version', utils.asyncHandler(retrieveAppVersion()))
   app.get('/rest/admin/application-configuration', utils.asyncHandler(retrieveAppConfiguration()))
   app.get('/rest/repeat-notification', utils.asyncHandler(repeatNotification()))
@@ -613,7 +624,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.put('/rest/continue-code-fixIt/apply/:continueCode', utils.asyncHandler(restoreProgress.restoreProgressFixIt()))
   app.put('/rest/continue-code/apply/:continueCode', utils.asyncHandler(restoreProgress.restoreProgress()))
   app.get('/rest/captcha', utils.asyncHandler(captchas()))
-  app.get('/rest/image-captcha', utils.asyncHandler(imageCaptchas()))
+  app.get('/rest/image-captcha', security.isAuthorized(), utils.asyncHandler(imageCaptchas()))
   app.get('/rest/track-order/:id', trackOrder())
   app.get('/rest/country-mapping', utils.asyncHandler(countryMapping()))
   app.get('/rest/saveLoginIp', utils.asyncHandler(saveLoginIp()))
@@ -630,7 +641,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.get('/rest/memories', utils.asyncHandler(getMemories()))
   /* NoSQL API endpoints */
   app.get('/rest/products/:id/reviews', showProductReviews())
-  app.put('/rest/products/:id/reviews', utils.asyncHandler(createProductReviews()))
+  app.put('/rest/products/:id/reviews', security.isAuthorized(), utils.asyncHandler(createProductReviews()))
   app.patch('/rest/products/reviews', security.isAuthorized(), updateProductReviews())
   app.post('/rest/products/reviews', security.isAuthorized(), utils.asyncHandler(likeProductReviews()))
 
@@ -638,7 +649,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.post('/rest/chat', utils.asyncHandler(chat()))
 
   /* Web3 API endpoints */
-  app.post('/rest/web3/submitKey', utils.asyncHandler(checkKeys()))
+  app.post('/rest/web3/submitKey', security.isAuthorized(), utils.asyncHandler(checkKeys()))
   app.get('/rest/web3/nftUnlocked', nftUnlocked())
   app.get('/rest/web3/nftMintListen', utils.asyncHandler(nftMintListener()))
   app.post('/rest/web3/walletNFTVerify', walletNFTVerify())

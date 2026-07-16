@@ -21,11 +21,16 @@ export function getWalletBalance () {
 export function addWalletBalance () {
   return async (req: Request, res: Response, next: NextFunction) => {
     const cardId = req.body.paymentId
+    const balance = Number(req.body.balance)
+    if (!Number.isFinite(balance) || balance <= 0 || balance > 100) {
+      res.status(402).json({ status: 'error', message: 'Payment not accepted.' })
+      return
+    }
     const card = cardId ? await CardModel.findOne({ where: { id: cardId, UserId: req.body.UserId } }) : null
     if (card != null) {
       try {
-        await WalletModel.increment({ balance: req.body.balance }, { where: { UserId: req.body.UserId } })
-        res.status(200).json({ status: 'success', data: req.body.balance })
+        await WalletModel.increment({ balance }, { where: { UserId: req.body.UserId } })
+        res.status(200).json({ status: 'success', data: balance })
       } catch {
         res.status(404).json({ status: 'error' })
       }

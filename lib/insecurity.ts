@@ -13,6 +13,7 @@ import jws from 'jws'
 import sanitizeHtmlLib from 'sanitize-html'
 import sanitizeFilenameLib from 'sanitize-filename'
 import * as utils from './utils'
+import { BasketModel } from '../models/basket'
 
 // @ts-expect-error FIXME no typescript definitions for z85 :(
 import * as z85 from 'z85'
@@ -51,7 +52,26 @@ export const cutOffPoisonNullByte = (str: string) => {
 
 export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
 export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
-export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
+export const withoutSecrets = <T>(value: T): T => {
+  if (Array.isArray(value)) {
+    return value.map(item => withoutSecrets(item)) as T
+  }
+  if (value instanceof Date) {
+    return value
+  }
+  if (value && typeof value === 'object') {
+    const source = 'dataValues' in value ? (value as any).dataValues : value
+    const result: Record<string, unknown> = {}
+    for (const [key, nestedValue] of Object.entries(source as Record<string, unknown>)) {
+      if (!['password', 'totpSecret', 'deluxeToken'].includes(key)) {
+        result[key] = withoutSecrets(nestedValue)
+      }
+    }
+    return result as T
+  }
+  return value
+}
+export const authorize = (user = {}) => jwt.sign(withoutSecrets(user), privateKey, { expiresIn: '6h', algorithm: 'RS256' })
 export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
@@ -162,9 +182,20 @@ export const isAccounting = () => {
   }
 }
 
+export const isAdmin = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const decodedToken = verify(utils.jwtFrom(req)) && decode(utils.jwtFrom(req))
+    if (decodedToken?.data?.role === roles.admin) {
+      next()
+    } else {
+      res.status(403).json({ error: 'Malicious activity detected' })
+    }
+  }
+}
+
 export const isDeluxe = (req: Request) => {
   const decodedToken = verify(utils.jwtFrom(req)) && decode(utils.jwtFrom(req))
-  return decodedToken?.data?.role === roles.deluxe && decodedToken?.data?.deluxeToken && decodedToken?.data?.deluxeToken === deluxeToken(decodedToken?.data?.email)
+  return decodedToken?.data?.role === roles.deluxe
 }
 
 export const isCustomer = (req: Request) => {
@@ -180,6 +211,28 @@ export const appendUserId = () => {
     } catch (error: unknown) {
       res.status(401).json({ status: 'error', message: utils.getErrorMessage(error) })
     }
+  }
+}
+
+export const ownsBasket = (paramName = 'id') => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const user = authenticatedUsers.from(req)
+    if (!user?.data?.id) {
+      res.status(401).json({ status: 'error', message: 'Unauthorized' })
+      return
+    }
+    const basketId = Number(req.params[paramName])
+    if (!Number.isInteger(basketId)) {
+      res.status(400).json({ status: 'error', message: 'Invalid BasketId' })
+      return
+    }
+    const basket = await BasketModel.findOne({ where: { id: basketId, UserId: user.data.id } })
+    if (basket == null) {
+      res.status(403).json({ status: 'error', message: 'Malicious activity detected' })
+      return
+    }
+    req.body.UserId = user.data.id
+    next()
   }
 }
 
