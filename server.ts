@@ -476,6 +476,28 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   /* Verifying DB related challenges can be postponed until the next request for challenges is coming via finale */
   app.use(verify.databaseRelatedChallenges())
 
+  /* Role-based authorization, layered on top of the plain isAuthorized() JWT
+   * check registered above. Kept outside the changeProductChallenge/
+   * registerAdminChallenge vuln-code-snippet ranges so those coding-challenge
+   * snippets stay untouched; these additional handlers still run ahead of the
+   * generated finale endpoints below because Express executes same-path
+   * layers in registration order.
+   * - Listing the full user directory, or looking up another account by id,
+   *   is admin-only; a caller may still look up their own account.
+   * - Self-registration must never grant a client-chosen privilege level: any
+   *   client-supplied role is stripped before it can reach the generated
+   *   create handler, so every self-registered account gets the model's
+   *   default ('customer') role regardless of what the request body asked for. */
+  app.get('/api/Users', security.isAdmin())
+  app.get('/api/Users/:id', security.isAdminOrSelf())
+  app.use('/rest/user/authentication-details', security.isAdmin())
+  app.post('/api/Users', (req: Request, res: Response, next: NextFunction) => {
+    if (req.body.role !== undefined) {
+      delete req.body.role
+    }
+    next()
+  })
+
   // vuln-code-snippet start registerAdminChallenge
   /* Generated API endpoints */
   finale.initialize({ app, sequelize: seq })

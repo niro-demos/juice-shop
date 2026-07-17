@@ -19,7 +19,7 @@ let authHeader: Record<string, string>
 before(async () => {
   const result = await createTestApp()
   app = result.app
-  authHeader = { Authorization: `Bearer ${security.authorize()}`, 'content-type': 'application/json' }
+  authHeader = { Authorization: `Bearer ${security.authorize({ data: { role: 'admin' } })}`, 'content-type': 'application/json' }
 }, { timeout: 60000 })
 
 const jsonHeader = { 'content-type': 'application/json' }
@@ -28,6 +28,15 @@ void describe('/api/Users', () => {
   void it('GET all users is forbidden via public API', async () => {
     const res = await request(app).get('/api/Users')
     assert.equal(res.status, 401)
+  })
+
+  void it('GET all users is forbidden for a plain customer (not admin)', async () => {
+    const { token } = await login(app, { email: 'jim@juice-sh.op', password: 'ncc-1701' })
+    const res = await request(app)
+      .get('/api/Users')
+      .set({ Authorization: `Bearer ${token}`, 'content-type': 'application/json' })
+    assert.equal(res.status, 403, 'a non-admin customer must not be able to list the full user directory')
+    assert.equal(res.body.data, undefined)
   })
 
   void it('GET all users', async () => {
@@ -59,13 +68,15 @@ void describe('/api/Users', () => {
     assert.equal(res.body.data.password, undefined)
   })
 
-  void it('POST new admin', async () => {
+  void it('POST self-registration ignores a client-supplied admin role', async () => {
+    const password = 'hooooorst'
+    const email = 'horst2@horstma.nn'
     const res = await request(app)
       .post('/api/Users')
       .set(jsonHeader)
       .send({
-        email: 'horst2@horstma.nn',
-        password: 'hooooorst',
+        email,
+        password,
         role: 'admin'
       })
     assert.equal(res.status, 201)
@@ -74,7 +85,13 @@ void describe('/api/Users', () => {
     assert.equal(typeof res.body.data.createdAt, 'string')
     assert.equal(typeof res.body.data.updatedAt, 'string')
     assert.equal(res.body.data.password, undefined)
-    assert.equal(res.body.data.role, 'admin')
+    assert.equal(res.body.data.role, 'customer', 'self-registration must never grant a client-chosen privilege level')
+
+    // Confirm the escalation is not merely hidden from the response but
+    // genuinely never persisted: logging in must yield a non-admin session.
+    const { token } = await login(app, { email, password })
+    const role = (security.decode(token) as any)?.data?.role
+    assert.equal(role, 'customer', 'the issued session token must not carry an escalated role')
   })
 
   void it('POST new blank user', async () => {
@@ -127,7 +144,7 @@ void describe('/api/Users', () => {
     assert.equal(res.body.data.password, undefined)
   })
 
-  void it('POST new deluxe user', async () => {
+  void it('POST self-registration ignores a client-supplied deluxe role', async () => {
     const res = await request(app)
       .post('/api/Users')
       .set(jsonHeader)
@@ -142,10 +159,10 @@ void describe('/api/Users', () => {
     assert.equal(typeof res.body.data.createdAt, 'string')
     assert.equal(typeof res.body.data.updatedAt, 'string')
     assert.equal(res.body.data.password, undefined)
-    assert.equal(res.body.data.role, 'deluxe')
+    assert.equal(res.body.data.role, 'customer', 'deluxe membership must only be grantable via the dedicated upgrade flow, not self-registration')
   })
 
-  void it('POST new accounting user', async () => {
+  void it('POST self-registration ignores a client-supplied accounting role', async () => {
     const res = await request(app)
       .post('/api/Users')
       .set(jsonHeader)
@@ -160,10 +177,10 @@ void describe('/api/Users', () => {
     assert.equal(typeof res.body.data.createdAt, 'string')
     assert.equal(typeof res.body.data.updatedAt, 'string')
     assert.equal(res.body.data.password, undefined)
-    assert.equal(res.body.data.role, 'accounting')
+    assert.equal(res.body.data.role, 'customer')
   })
 
-  void it('POST user not belonging to customer, deluxe, accounting, admin is forbidden', async () => {
+  void it('POST self-registration ignores an invalid client-supplied role instead of erroring', async () => {
     const res = await request(app)
       .post('/api/Users')
       .set(jsonHeader)
@@ -172,11 +189,9 @@ void describe('/api/Users', () => {
         password: 'hooooorst',
         role: 'accountinguser'
       })
-    assert.equal(res.status, 400)
+    assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(res.body.message, 'Validation error: Validation isIn on role failed')
-    assert.equal(res.body.errors[0].field, 'role')
-    assert.equal(res.body.errors[0].message, 'Validation isIn on role failed')
+    assert.equal(res.body.data.role, 'customer')
   })
 
   if (utils.isChallengeEnabled(challenges.persistedXssUserChallenge)) {
@@ -217,6 +232,27 @@ void describe('/api/Users/:id', () => {
   void it('GET existing user by id', async () => {
     const res = await request(app).get('/api/Users/1').set(authHeader)
     assert.equal(res.status, 200)
+  })
+
+  void it('GET another user by id is forbidden for a plain customer (not admin, not self)', async () => {
+    const { token } = await login(app, { email: 'jim@juice-sh.op', password: 'ncc-1701' })
+    const res = await request(app)
+      .get('/api/Users/1') // admin@juice-sh.op's account, not jim's
+      .set({ Authorization: `Bearer ${token}`, 'content-type': 'application/json' })
+    assert.equal(res.status, 403, 'a customer must not be able to read another account\'s record')
+    assert.equal(res.body.data, undefined)
+  })
+
+  void it('GET own user by id succeeds for a plain customer looking up themselves', async () => {
+    const { token } = await login(app, { email: 'jim@juice-sh.op', password: 'ncc-1701' })
+    const ownId = (security.decode(token) as any)?.data?.id
+    assert.equal(typeof ownId, 'number')
+
+    const res = await request(app)
+      .get(`/api/Users/${ownId}`)
+      .set({ Authorization: `Bearer ${token}`, 'content-type': 'application/json' })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.data.email, 'jim@juice-sh.op')
   })
 
   void it('PUT update existing user is forbidden via API even when authenticated', async () => {

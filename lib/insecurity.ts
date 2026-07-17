@@ -162,6 +162,32 @@ export const isAccounting = () => {
   }
 }
 
+export const isAdmin = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const decodedToken = verify(utils.jwtFrom(req)) && decode(utils.jwtFrom(req))
+    if (decodedToken?.data?.role === roles.admin) {
+      next()
+    } else {
+      res.status(403).json({ error: 'Malicious activity detected' })
+    }
+  }
+}
+
+// Admin-only routes that also expose a caller's own record (e.g. /api/Users/:id)
+// should let a user read their own account without granting them the admin-only
+// directory/lookup of every other account.
+export const isAdminOrSelf = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const decodedToken = verify(utils.jwtFrom(req)) && decode(utils.jwtFrom(req))
+    const requestedId = Number(req.params.id)
+    if (decodedToken?.data?.role === roles.admin || (!Number.isNaN(requestedId) && decodedToken?.data?.id === requestedId)) {
+      next()
+    } else {
+      res.status(403).json({ error: 'Malicious activity detected' })
+    }
+  }
+}
+
 export const isDeluxe = (req: Request) => {
   const decodedToken = verify(utils.jwtFrom(req)) && decode(utils.jwtFrom(req))
   return decodedToken?.data?.role === roles.deluxe && decodedToken?.data?.deluxeToken && decodedToken?.data?.deluxeToken === deluxeToken(decodedToken?.data?.email)
