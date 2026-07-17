@@ -337,15 +337,17 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   })
   app.use(morgan('combined', { stream: accessLogStream }))
 
-  // vuln-code-snippet start resetPasswordMortyChallenge
   /* Rate limiting */
-  app.enable('trust proxy')
+  // 'trust proxy' must stay disabled (the default) unless this app is genuinely deployed
+  // behind a configured, trusted reverse proxy: with it enabled, Express derives `req.ip`
+  // from the client-suppliable X-Forwarded-For header, which would let a client bypass any
+  // IP-keyed rate limit below simply by sending a different spoofed value on every request.
+  app.set('trust proxy', false)
   app.use('/rest/user/reset-password', rateLimit({
     windowMs: 5 * 60 * 1000,
     max: 100,
-    keyGenerator ({ headers, ip }: { headers: any, ip: any }) { return headers['X-Forwarded-For'] ?? ip } // vuln-code-snippet vuln-line resetPasswordMortyChallenge
+    validate: false
   }))
-  // vuln-code-snippet end resetPasswordMortyChallenge
 
   // vuln-code-snippet start changeProductChallenge
   /** Authorization **/
@@ -593,7 +595,10 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   }
 
   /* Custom Restful API */
-  app.post('/rest/user/login', login())
+  app.post('/rest/user/login',
+    rateLimit({ windowMs: 5 * 60 * 1000, max: 100, validate: false }),
+    login()
+  )
   app.get('/rest/user/change-password', utils.asyncHandler(changePassword()))
   app.post('/rest/user/reset-password', utils.asyncHandler(resetPassword()))
   app.get('/rest/user/security-question', utils.asyncHandler(securityQuestion()))

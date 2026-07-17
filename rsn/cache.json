@@ -1145,9 +1145,7 @@
 		]
 	},
 	"resetPasswordMortyChallenge_1.ts": {
-		"added": [
-			2
-		],
+		"added": [],
 		"removed": []
 	},
 	"resetPasswordMortyChallenge_2.ts": {
@@ -1155,14 +1153,8 @@
 		"removed": []
 	},
 	"resetPasswordMortyChallenge_3.ts": {
-		"added": [
-			4,
-			5
-		],
-		"removed": [
-			4,
-			5
-		]
+		"added": [],
+		"removed": []
 	},
 	"resetPasswordMortyChallenge_4_correct.ts": {
 		"added": [],
