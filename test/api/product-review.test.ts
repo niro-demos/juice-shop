@@ -34,11 +34,16 @@ void describe('/rest/products/:id/reviews', () => {
     assert.equal(typeof review.author, 'string')
   })
 
-  void it('GET product reviews attack by injecting a mongoDB sleep command', async () => {
+  void it('GET product reviews must reject a NoSQL command injected as the product id instead of executing it', async () => {
     const res = await request(app)
       .get('/rest/products/sleep(1)/reviews')
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/json'))
+    assert.equal(res.status, 400)
+  })
+
+  void it('GET product reviews must not bypass the product filter via a boolean NoSQL injection payload', async () => {
+    const res = await request(app)
+      .get('/rest/products/' + encodeURIComponent('0 || true') + '/reviews')
+    assert.equal(res.status, 400)
   })
 
   // FIXME Turn on when #1960 is resolved

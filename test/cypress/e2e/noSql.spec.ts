@@ -7,7 +7,10 @@ describe('/rest/products/reviews', () => {
     beforeEach(() => {
       cy.login({ email: 'admin', password: 'admin123' })
     })
-    it('should be possible to inject a command into the get route', () => {
+    // GET /rest/products/:id/reviews no longer evaluates the id as a
+    // MongoDB $where JS expression (unauthenticated RCE fix), so this
+    // challenge can no longer be solved via this vector.
+    it.skip('should be possible to inject a command into the get route', () => {
       cy.task('isDocker').then((isDocker) => {
         if (!isDocker) {
           cy.window().then(() => {
@@ -28,7 +31,11 @@ describe('/rest/products/reviews', () => {
   })
 
   describe('challenge "NoSQL Exfiltration"', () => {
-    it('should be possible to inject and get all the orders', () => {
+    // GET /rest/track-order/:id now performs an exact-equality lookup
+    // instead of a MongoDB $where JS expression (unauthenticated bulk order
+    // exfiltration fix), so this challenge can no longer be solved via this
+    // vector.
+    it.skip('should be possible to inject and get all the orders', () => {
       cy.task('isDocker').then((isDocker) => {
         if (!isDocker) {
           cy.window().then(async () => {
