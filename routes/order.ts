@@ -116,6 +116,14 @@ export function placeOrder () {
             doc.moveDown()
             totalPrice -= parseFloat(discountAmount)
           }
+          if (totalPrice < 0) {
+            // Defense in depth: quantities are already rejected at the basket-item level
+            // (see routes/basketItems.ts quantityCheck), but never let a negative total
+            // reach payment regardless of how it was produced - a negative total must
+            // never be used to credit a customer's wallet instead of charging it.
+            next(new Error('Invalid order total.'))
+            return
+          }
           const deliveryMethod = {
             deluxePrice: 0,
             price: 0,
@@ -198,13 +206,21 @@ function calculateApplicableDiscount (basket: BasketModel, req: Request) {
     const couponDate = Number(couponData[1])
     const campaign = campaigns[couponCode as keyof typeof campaigns]
 
-    if (campaign && couponDate == campaign.validOn) { // eslint-disable-line eqeqeq
+    // couponCode/validOn are static values shipped in this very source file, so matching
+    // them only proves the client can read this file - not that this coupon was ever
+    // issued to this user. The one check that can't be forged from public information is
+    // the server's own clock: a campaign is only redeemable within its real-world window,
+    // never by replaying an old campaign's date years after the fact.
+    if (campaign && couponDate == campaign.validOn && Math.abs(new Date().getTime() - campaign.validOn) <= CAMPAIGN_REDEMPTION_WINDOW_MS) { // eslint-disable-line eqeqeq
       challengeUtils.solveIf(challenges.manipulateClockChallenge, () => { return campaign.validOn < new Date().getTime() })
       return campaign.discount
     }
   }
   return 0
 }
+
+// Campaign codes are only meant to be redeemable on/around their advertised day.
+const CAMPAIGN_REDEMPTION_WINDOW_MS = 24 * 60 * 60 * 1000
 
 const campaigns = {
   WMNSDY2019: { validOn: new Date('Mar 08, 2019 00:00:00 GMT+0100').getTime(), discount: 75 },

@@ -140,16 +140,12 @@ void describe('/rest/basket/:id/checkout', () => {
     assert.ok(res.text.includes('Error: Basket with id=42 does not exist.'))
   })
 
-  void it('POST placing an order for a basket with a negative total cost is possible', async () => {
+  void it('POST adding a basket item with a negative quantity is rejected, so it cannot be used to drive an order total negative', async () => {
     const itemRes = await request(app)
       .post('/api/BasketItems')
       .set(authHeader)
       .send({ BasketId: 2, ProductId: 10, quantity: -100 })
-    assert.equal(itemRes.status, 200)
-
-    const res = await request(app).post('/rest/basket/3/checkout').set(authHeader)
-    assert.equal(res.status, 200)
-    assert.ok(res.body.orderConfirmation !== undefined)
+    assert.equal(itemRes.status, 400)
   })
 
   void it('POST placing an order for a basket with 99% discount is possible', async () => {
@@ -230,5 +226,45 @@ void describe('/rest/basket/:id/coupon/:coupon', () => {
       .put('/rest/basket/4711/coupon/' + encodeURIComponent(validCoupon))
       .set(authHeader)
     assert.equal(res.status, 500)
+  })
+})
+
+void describe('/rest/basket/:id/checkout with forged campaign coupon data', () => {
+  void it('POST checkout does not grant a discount for a self-computed historical campaign coupon that was never issued to this user', async () => {
+    const email = `niro-coupon-regression-${Date.now()}@juice-sh.op`
+    const password = 'CouponRegression1234!'
+    await request(app)
+      .post('/api/Users')
+      .send({ email, password, passwordRepeat: password, securityQuestion: { id: 1 }, securityAnswer: 'answer' })
+    const { token, bid } = await login(app, { email, password })
+    const freshAuthHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+
+    const itemRes = await request(app)
+      .post('/api/BasketItems')
+      .set(freshAuthHeader)
+      .send({ BasketId: bid, ProductId: 4, quantity: 2 }) // Raspberry Juice (1000ml) @ 4.99
+    assert.equal(itemRes.status, 200)
+
+    // Forged, never-issued historical campaign coupon: routes/order.ts's own
+    // `campaigns.WMNSDY2019` entry, base64-encoded exactly as a real client would,
+    // using only values that are public/static in the shipped server source.
+    const campaignValidOn = new Date('Mar 08, 2019 00:00:00 GMT+0100').getTime()
+    const forgedCouponData = Buffer.from(`WMNSDY2019-${campaignValidOn}`).toString('base64')
+
+    const checkoutRes = await request(app)
+      .post(`/rest/basket/${bid}/checkout`)
+      .set(freshAuthHeader)
+      .send({ couponData: forgedCouponData, orderDetails: { paymentId: 'card', addressId: 1 } })
+    assert.equal(checkoutRes.status, 200)
+    assert.ok(checkoutRes.body.orderConfirmation)
+
+    const historyRes = await request(app)
+      .get('/rest/order-history')
+      .set(freshAuthHeader)
+    assert.equal(historyRes.status, 200)
+    const order = historyRes.body.data.find((o: any) => o.orderId === checkoutRes.body.orderConfirmation)
+    assert.ok(order, 'placed order should appear in order history')
+    assert.equal(Number(order.promotionalAmount), 0) // no unearned discount applied
+    assert.equal(order.totalPrice, 9.98) // full, undiscounted subtotal (2 x Raspberry Juice @ 4.99)
   })
 })

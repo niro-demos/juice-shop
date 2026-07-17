@@ -212,4 +212,27 @@ void describe('/rest/deluxe-membership', () => {
     assert.equal(res.status, 400)
     assert.equal(res.body.error, 'Something went wrong. Please try again!')
   })
+
+  void it('POST upgrade deluxe membership fails for an unrecognized paymentMode without moving funds or granting the role', async () => {
+    const email = `niro-deluxe-regression-${Date.now()}@juice-sh.op`
+    const password = 'DeluxeRegression1234!'
+    await request(app)
+      .post('/api/Users')
+      .send({ email, password, passwordRepeat: password, securityQuestion: { id: 1 }, securityAnswer: 'answer' })
+    const { token } = await login(app, { email, password })
+    const freshAuthHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+
+    const res = await request(app)
+      .post('/rest/deluxe-membership')
+      .set(freshAuthHeader)
+      .send({ paymentMode: 'totally_bogus_mode' })
+
+    assert.equal(res.status, 400)
+
+    const statusRes = await request(app)
+      .get('/rest/deluxe-membership')
+      .set(freshAuthHeader)
+    assert.equal(statusRes.status, 200)
+    assert.equal(statusRes.body.data.membershipCost, 49) // still a plain customer, upgrade was not granted
+  })
 })

@@ -73,6 +73,14 @@ void describe('/api/BasketItems', () => {
     assert.equal(res.body.error, 'You can order only up to 5 items of this product.')
   })
 
+  void it('POST new basket item with negative quantity is rejected', async () => {
+    const res = await request(app)
+      .post('/api/BasketItems')
+      .set(authHeader)
+      .send({ BasketId: 2, ProductId: 2, quantity: -5 })
+    assert.equal(res.status, 400)
+  })
+
   void it('POST new basket item with invalid basket ID is forbidden', async () => {
     const res = await request(app)
       .post('/api/BasketItems')

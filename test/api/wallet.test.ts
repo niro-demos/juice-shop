@@ -74,6 +74,25 @@ void describe('/api/Wallets', () => {
       .send({ balance: 10 })
     assert.equal(res.status, 402)
   })
+  void it('PUT charge wallet rejects a client-supplied balance outside the advertised bound and does not credit the wallet', async () => {
+    const before = await request(app)
+      .get('/rest/wallet/balance')
+      .set(authHeader)
+    assert.equal(before.status, 200)
+
+    const res = await request(app)
+      .put('/rest/wallet/balance')
+      .set(authHeader)
+      .send({ balance: 999999, paymentId: 2 })
+    assert.equal(res.status, 400)
+
+    const after = await request(app)
+      .get('/rest/wallet/balance')
+      .set(authHeader)
+    assert.equal(after.status, 200)
+    assert.equal(after.body.data, before.body.data)
+  })
+
   void it('GET wallet balance for user without a wallet returns 404', async () => {
     const email = `newuser${Date.now()}@juice-sh.op`
     const userRes = await request(app)

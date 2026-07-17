@@ -15,7 +15,10 @@ describe('/#/deluxe-membership', () => {
   })
 
   describe('challenge "freeDeluxe"', () => {
-    it('should upgrade to deluxe for free by making a post request to /rest/deluxe-membership by setting the paymentMode parameter to null', () => {
+    // Security fix: /rest/deluxe-membership now rejects any paymentMode other than
+    // 'wallet' or 'card' instead of silently granting deluxe for free, so this can no
+    // longer be solved by omitting paymentMode.
+    it('should reject a deluxe membership upgrade that omits paymentMode instead of granting it for free', () => {
       cy.login({
         email: 'jim',
         password: 'ncc-1701'
@@ -25,12 +28,13 @@ describe('/#/deluxe-membership', () => {
         cy.request({
           url: '/rest/deluxe-membership',
           method: 'POST',
-          headers: { Authorization: `Bearer ${token?.value}` }
+          headers: { Authorization: `Bearer ${token?.value}` },
+          failOnStatusCode: false
         }).then((response) => {
-          expect(response.body.status).contains('success')
+          expect(response.status).to.eq(400)
+          expect(response.body.status).contains('error')
         })
       })
-      cy.expectChallengeSolved({ challenge: 'Deluxe Fraud' })
     })
   })
 })

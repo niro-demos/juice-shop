@@ -29,14 +29,18 @@ export function upgradeToDeluxe () {
         } else {
           await WalletModel.decrement({ balance: 49 }, { where: { UserId: req.body.UserId } })
         }
-      }
-
-      if (req.body.paymentMode === 'card') {
+      } else if (req.body.paymentMode === 'card') {
         const card = await CardModel.findOne({ where: { id: req.body.paymentId, UserId: req.body.UserId } })
         if ((card == null) || card.expYear < new Date().getFullYear() || (card.expYear === new Date().getFullYear() && card.expMonth - 1 < new Date().getMonth())) {
           res.status(400).json({ status: 'error', error: 'Invalid Card' })
           return
         }
+      } else {
+        // No recognized payment mode was supplied and verified: never fall through to
+        // granting the role. Every path to deluxe must go through an actual wallet debit
+        // or a validated card, above.
+        res.status(400).json({ status: 'error', error: 'Invalid payment mode' })
+        return
       }
 
       try {

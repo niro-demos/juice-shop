@@ -253,6 +253,47 @@ void describe('order', () => {
     assert.ok(true)
   })
 
+  void it('should reject checkout when the computed order total is negative instead of crediting the wallet (defense in depth against a negative basket quantity bypassing the basket-item check)', async () => {
+    const basket = {
+      id: 1,
+      Products: [{
+        BasketItem: { ProductId: 1, quantity: -50 },
+        price: 2.99,
+        deluxePrice: 2.99,
+        name: 'Lemon Juice',
+        id: 1
+      }],
+      update: mock.fn(),
+      coupon: null
+    }
+    mock.method(BasketModel, 'findOne', async () => basket)
+    mock.method(security.authenticatedUsers, 'from', () => ({ data: { email: 'test@juice-sh.op' } }))
+    mock.method(QuantityModel, 'findOne', async () => ({ quantity: 100 }))
+    mock.method(QuantityModel, 'update', async () => [1])
+    req.body.UserId = 1
+    req.body.orderDetails = { paymentId: 'wallet' }
+    mock.method(WalletModel, 'findOne', async () => ({ balance: 100 }))
+    const decrementCalls: any[] = []
+    mock.method(WalletModel, 'decrement', async (...args: any[]) => { decrementCalls.push(args); return [1] })
+    mock.method(WalletModel, 'increment', async () => [1])
+    mock.method(db.ordersCollection, 'insert', async () => {})
+    mock.method(BasketItemModel, 'destroy', async () => {})
+
+    const outcome: { rejectionError?: Error, succeeded?: boolean } = {}
+    const p = new Promise<void>((resolve) => {
+      next = (err: Error) => { outcome.rejectionError = err; resolve() }
+      res.json = () => { outcome.succeeded = true; resolve() }
+    })
+
+    placeOrder()(req, res, next)
+    await p
+
+    assert.equal(decrementCalls.length, 0) // wallet must never be decremented (i.e. credited) by a negative total
+    assert.equal(outcome.succeeded, undefined, 'expected checkout with a negative order total not to succeed')
+    assert.ok(outcome.rejectionError, 'expected checkout with a negative order total to be rejected via next(error)')
+    assert.match(outcome.rejectionError!.message, /Invalid order total/)
+  })
+
   void it('should call next with error if wallet balance is insufficient', async () => {
     const basket = {
       id: 1,

@@ -5,7 +5,11 @@ describe('/#/basket', () => {
     })
 
     describe('challenge "negativeOrder"', () => {
-      it('should be possible to update a basket to a negative quantity via the Rest API', () => {
+      // Security fix: quantityCheck (routes/basketItems.ts) now rejects any
+      // non-positive quantity server-side, so a basket item can no longer be driven
+      // negative via the Rest API - which also closes off placing an order with a
+      // negative total (previously credited the wallet instead of charging it).
+      it('should reject updating a basket item to a negative quantity via the Rest API', () => {
         cy.window().then(async () => {
           const response = await fetch(
             `${Cypress.config('baseUrl')}/api/BasketItems/1`,
@@ -19,9 +23,7 @@ describe('/#/basket', () => {
               body: JSON.stringify({ quantity: -100000 })
             }
           )
-          if (response.status === 200) {
-            console.log('Success')
-          }
+          expect(response.status).to.eq(400)
         })
         cy.visit('/#/order-summary')
 
@@ -29,14 +31,8 @@ describe('/#/basket', () => {
           .first()
           .then(($ele) => {
             const quantity = $ele.text()
-            expect(quantity).to.match(/-100000/)
+            expect(quantity).not.to.match(/-100000/)
           })
-      })
-
-      it('should be possible to place an order with a negative total amount', () => {
-        cy.visit('/#/order-summary')
-        cy.get('#checkoutButton').click()
-        cy.expectChallengeSolved({ challenge: 'Payback Time' })
       })
     })
 
@@ -76,7 +72,12 @@ describe('/#/basket', () => {
       cy.login({ email: 'jim', password: 'ncc-1701' })
     })
     describe('challenge "manipulateClock"', () => {
-      it('should be possible to enter WMNSDY2019 coupon & place order with this expired coupon', () => {
+      // Security fix: calculateApplicableDiscount (routes/order.ts) now checks the
+      // campaign redemption window against the server's own clock, not just a
+      // client-supplied date. Manipulating the browser's local Date() can still make
+      // the coupon look accepted client-side, but the server independently rejects a
+      // years-old campaign code, so no discount should ever be applied at checkout.
+      it('should not receive a discount for an expired campaign coupon even after manipulating the local clock to match it', () => {
         cy.window().then(() => {
           window.localStorage.couponPanelExpanded = false
         })
@@ -98,7 +99,17 @@ describe('/#/basket', () => {
         cy.get('.mat-mdc-radio-button').first().click()
         cy.get('.nextButton').click()
         cy.get('#checkoutButton').click()
-        cy.expectChallengeSolved({ challenge: 'Expired Coupon' })
+
+        cy.window().then((win) => {
+          cy.request({
+            url: '/rest/order-history',
+            headers: { Authorization: `Bearer ${win.localStorage.getItem('token')}` }
+          }).then((response) => {
+            const orders = response.body.data
+            const lastOrder = orders[orders.length - 1]
+            expect(Number(lastOrder.promotionalAmount)).to.eq(0)
+          })
+        })
       })
     })
 
