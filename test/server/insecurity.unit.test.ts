@@ -203,4 +203,22 @@ void describe('insecurity', () => {
       assert.equal(security.hmac(''), 'f052179ec5894a2e79befa8060cfcb517f1e14f7f6222af854377b6481ae953e')
     })
   })
+
+  void describe('isRedirectAllowed', () => {
+    void it('allows an exact allow-listed URL (legitimate baseline)', () => {
+      assert.equal(security.isRedirectAllowed('https://github.com/juice-shop/juice-shop'), true)
+    })
+
+    void it('rejects a wholly unrelated URL (baseline blocking works)', () => {
+      assert.equal(security.isRedirectAllowed('https://evil-attacker.example/nothing-in-common'), false)
+    })
+
+    void it('rejects an attacker URL that merely contains an allow-listed URL as a path substring', () => {
+      assert.equal(security.isRedirectAllowed('https://github.com/juice-shop/juice-shop.evil-attacker.example/phish'), false)
+    })
+
+    void it('rejects an attacker URL that merely contains an allow-listed URL as a query-string value', () => {
+      assert.equal(security.isRedirectAllowed('https://evil-attacker.example/?x=https://github.com/juice-shop/juice-shop'), false)
+    })
+  })
 })
