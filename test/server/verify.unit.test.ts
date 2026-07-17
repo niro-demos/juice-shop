@@ -5,6 +5,7 @@
 
 import { describe, it, beforeEach, mock } from 'node:test'
 import assert from 'node:assert/strict'
+import crypto from 'node:crypto'
 import config from 'config'
 import { challenges, products, setRetrieveBlueprintChallengeFile } from '../../data/datacache'
 import type { Product, Challenge } from '@juice-shop/data/types'
@@ -252,6 +253,19 @@ void describe('verify', () => {
       challenges.jwtForgedChallenge = { solved: false, save, disabledEnv: 'Windows' } as unknown as Challenge
     })
 
+    // Forges an HS256 token HMAC-signed with the live security.publicKey text,
+    // the same RS256->HS256 key-confusion trick the "Forged Signed JWT"
+    // challenge is about. Computed here (rather than hardcoded) since the
+    // signing/verification key is now generated per-process instead of a
+    // fixed literal (TC-DCACAB28), so a token pre-forged against any other
+    // key text would no longer verify.
+    function forgeHs256Token (payload: any): string {
+      const base64url = (input: Buffer | string) => Buffer.from(input).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+      const signingInput = `${base64url(JSON.stringify({ typ: 'JWT', alg: 'HS256' }))}.${base64url(JSON.stringify(payload))}`
+      const signature = crypto.createHmac('sha256', security.publicKey).update(signingInput).digest()
+      return `${signingInput}.${base64url(signature)}`
+    }
+
     void it('"jwtUnsignedChallenge" is solved when forged unsigned token has email jwtn3d@juice-sh.op in the payload', () => {
       req.headers = { authorization: 'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJkYXRhIjp7ImVtYWlsIjoiand0bjNkQGp1aWNlLXNoLm9wIn0sImlhdCI6MTUwODYzOTYxMiwiZXhwIjo5OTk5OTk5OTk5fQ.' }
 
@@ -278,7 +292,8 @@ void describe('verify', () => {
     })
 
     void it('"jwtForgedChallenge" is solved when forged token HMAC-signed with public RSA-key has email rsa_lord@juice-sh.op in the payload', { skip: isWindows() ? 'not supported on Windows' : false }, () => {
-      req.headers = { authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRhIjp7ImVtYWlsIjoicnNhX2xvcmRAanVpY2Utc2gub3AifSwiaWF0IjoxNTgyMjIxNTc1fQ.ycFwtqh4ht4Pq9K5rhiPPY256F9YCTIecd4FHFuSEAg' }
+      const token = forgeHs256Token({ data: { email: 'rsa_lord@juice-sh.op' }, iat: Math.floor(Date.now() / 1000) })
+      req.headers = { authorization: `Bearer ${token}` }
 
       verify.jwtChallenges()(req, res, next)
 
@@ -286,7 +301,8 @@ void describe('verify', () => {
     })
 
     void it('"jwtForgedChallenge" is solved when forged token HMAC-signed with public RSA-key has string "rsa_lord@" in the payload', { skip: isWindows() ? 'not supported on Windows' : false }, () => {
-      req.headers = { authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRhIjp7ImVtYWlsIjoicnNhX2xvcmRAIn0sImlhdCI6MTU4MjIyMTY3NX0.50f6VAIQk2Uzpf3sgH-1JVrrTuwudonm2DKn2ec7Tg8' }
+      const token = forgeHs256Token({ data: { email: 'rsa_lord@' }, iat: Math.floor(Date.now() / 1000) })
+      req.headers = { authorization: `Bearer ${token}` }
 
       verify.jwtChallenges()(req, res, next)
 

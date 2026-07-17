@@ -65,6 +65,9 @@ config/*.yml
 !config/oss.yml
 !config/defcon33.yml
 
+# Session-signing key material generated/synced at startup (see lib/insecurity.ts)
+encryptionkeys/jwt.pub
+
 # System Files
 .DS_Store
 

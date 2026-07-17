@@ -17,8 +17,47 @@ import * as utils from './utils'
 // @ts-expect-error FIXME no typescript definitions for z85 :(
 import * as z85 from 'z85'
 
-export const publicKey = fs ? fs.readFileSync('encryptionkeys/jwt.pub', 'utf8') : 'placeholder-public-key'
-const privateKey = '-----BEGIN RSA PRIVATE KEY-----\r\nMIICXAIBAAKBgQDNwqLEe9wgTXCbC7+RPdDbBbeqjdbs4kOPOIGzqLpXvJXlxxW8iMz0EaM4BKUqYsIa+ndv3NAn2RxCd5ubVdJJcX43zO6Ko0TFEZx/65gY3BE0O6syCEmUP4qbSd6exou/F+WTISzbQ5FBVPVmhnYhG/kpwt/cIxK5iUn5hm+4tQIDAQABAoGBAI+8xiPoOrA+KMnG/T4jJsG6TsHQcDHvJi7o1IKC/hnIXha0atTX5AUkRRce95qSfvKFweXdJXSQ0JMGJyfuXgU6dI0TcseFRfewXAa/ssxAC+iUVR6KUMh1PE2wXLitfeI6JLvVtrBYswm2I7CtY0q8n5AGimHWVXJPLfGV7m0BAkEA+fqFt2LXbLtyg6wZyxMA/cnmt5Nt3U2dAu77MzFJvibANUNHE4HPLZxjGNXN+a6m0K6TD4kDdh5HfUYLWWRBYQJBANK3carmulBwqzcDBjsJ0YrIONBpCAsXxk8idXb8jL9aNIg15Wumm2enqqObahDHB5jnGOLmbasizvSVqypfM9UCQCQl8xIqy+YgURXzXCN+kwUgHinrutZms87Jyi+D8Br8NY0+Nlf+zHvXAomD2W5CsEK7C+8SLBr3k/TsnRWHJuECQHFE9RA2OP8WoaLPuGCyFXaxzICThSRZYluVnWkZtxsBhW2W8z1b8PvWUE7kMy7TnkzeJS2LSnaNHoyxi7IaPQUCQCwWU4U+v4lD7uYBw00Ga/xt+7+UqFPlPVdz1yyr4q24Zxaw0LgmuEvgU5dycq8N7JxjTubX0MIRR+G9fmDBBl8=\r\n-----END RSA PRIVATE KEY-----'
+// The RSA key pair that signs session tokens must be a secret unique to this
+// deployment. Prefer an operator-provisioned key (JWT_PRIVATE_KEY /
+// JWT_PRIVATE_KEY_PATH, e.g. sourced from a secret manager); if none is
+// configured, generate a fresh key pair for this process instead of falling
+// back to a value shipped in source -- a hardcoded literal would be
+// identical, and known, across every install of this open-source project
+// (see TC-DCACAB28). Tradeoff: without an operator-provided key, sessions
+// do not survive a process restart, and multiple instances behind a load
+// balancer must be given the same JWT_PRIVATE_KEY to share sessions.
+function loadOrGenerateJwtKeyPair (): { privateKey: string, publicKey: string } {
+  const configuredPrivateKey = process.env.JWT_PRIVATE_KEY ??
+    (process.env.JWT_PRIVATE_KEY_PATH ? fs.readFileSync(process.env.JWT_PRIVATE_KEY_PATH, 'utf8') : undefined)
+
+  if (configuredPrivateKey !== undefined && configuredPrivateKey !== '') {
+    const derivedPublicKey = crypto.createPublicKey(configuredPrivateKey).export({ type: 'pkcs1', format: 'pem' }).toString()
+    return { privateKey: configuredPrivateKey, publicKey: derivedPublicKey }
+  }
+
+  return crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    publicKeyEncoding: { type: 'pkcs1', format: 'pem' }
+  })
+}
+
+const jwtKeyPair = loadOrGenerateJwtKeyPair()
+export const publicKey = jwtKeyPair.publicKey
+const privateKey = jwtKeyPair.privateKey
+
+// GET /encryptionkeys/jwt.pub (routes/keyServer.ts) intentionally serves this
+// key to clients so they can verify RS256 tokens themselves -- keep the file
+// on disk in sync with whatever key this process actually resolved above, so
+// the endpoint never serves a stale key left over from a previous run (e.g.
+// before an operator-provided JWT_PRIVATE_KEY was rotated in). Not fatal if
+// the filesystem is read-only; the in-memory publicKey export above is what
+// actually matters for verification.
+try {
+  fs.writeFileSync('encryptionkeys/jwt.pub', publicKey)
+} catch (error) {
+  console.warn('Could not write encryptionkeys/jwt.pub -- GET /encryptionkeys/jwt.pub may serve a stale key', error)
+}
 
 interface ResponseWithUser {
   status?: string
@@ -49,10 +88,60 @@ export const cutOffPoisonNullByte = (str: string) => {
   return str
 }
 
-export const isAuthorized = () => expressJwt(({ secret: publicKey }) as any)
+const JWT_ALGORITHM = 'RS256'
+const SENSITIVE_USER_FIELDS = ['password', 'totpSecret']
+
+// jsonwebtoken@0.4.0 (pinned intentionally for the knownVulnerableComponentChallenge)
+// and the express-jwt@0.1.3 middleware built on it never restrict which
+// algorithm a token may be verified with -- they always trust whatever `alg`
+// the token's own header claims, and neither exposes an `algorithms`
+// allowlist to configure. That lets an attacker who has the (intentionally
+// public) RS256 verification key present an HS256 token HMAC-signed with
+// that same key text and have it accepted as if it were a real RS256
+// signature ("key confusion", TC-3C07B029). Pin the algorithm here, at the
+// application layer, before any signature check runs.
+const hasAllowedAlgorithm = (token: string): boolean => {
+  try {
+    const header = JSON.parse(Buffer.from(token.split('.')[0], 'base64').toString('utf8'))
+    return header?.alg === JWT_ALGORITHM
+  } catch {
+    return false
+  }
+}
+
+export const isAuthorized = () => {
+  const verifyRS256Signature = expressJwt(({ secret: publicKey }) as any)
+  return (req: Request, res: Response, next: NextFunction) => {
+    const token = utils.jwtFrom(req)
+    if (token !== undefined && !hasAllowedAlgorithm(token)) {
+      res.status(401).json({ status: 'error', message: 'jwt signature algorithm is not allowed' })
+      return
+    }
+    verifyRS256Signature(req, res, next)
+  }
+}
 export const denyAll = () => expressJwt({ secret: '' + Math.random() } as any)
-export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })
-export const verify = (token: string) => token ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
+
+// A bearer JWT is only base64url-encoded and signature-protected, never
+// encrypted -- anyone holding the token can read its payload with no key at
+// all (browser storage, history, proxies, XSS). Never let the account's
+// password hash or raw TOTP seed ride along in that client-held payload
+// (TC-8C833A99). Both remain available server-side via the DB row and the
+// `authenticatedUsers` map, which each call site populates separately (with
+// the full user object) from what gets signed here.
+const claimsForToken = (payload: any) => {
+  if (payload == null || typeof payload !== 'object' || payload.data == null || typeof payload.data !== 'object') {
+    return payload
+  }
+  const data = JSON.parse(JSON.stringify(payload.data))
+  for (const field of SENSITIVE_USER_FIELDS) {
+    delete data[field]
+  }
+  return { ...payload, data }
+}
+
+export const authorize = (user = {}) => jwt.sign(claimsForToken(user), privateKey, { expiresIn: '6h', algorithm: 'RS256' })
+export const verify = (token: string) => token && hasAllowedAlgorithm(token) ? (jws.verify as ((token: string, secret: string) => boolean))(token, publicKey) : false
 export const decode = (token: string) => { return jws.decode(token)?.payload }
 
 export const sanitizeHtml = (html: string) => sanitizeHtmlLib(html)
@@ -185,7 +274,7 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
+  if (token && hasAllowedAlgorithm(token) && authenticatedUsers.get(token) === undefined) {
     jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)
