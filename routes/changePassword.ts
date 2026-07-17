@@ -4,17 +4,15 @@
  */
 
 import { type Request, type Response, type NextFunction } from 'express'
-import * as challengeUtils from '../lib/challengeUtils'
-import { challenges } from '../data/datacache'
 import { UserModel } from '../models/user'
 import * as security from '../lib/insecurity'
 
 export function changePassword () {
-  return async ({ query, headers, connection }: Request, res: Response, next: NextFunction) => {
-    const currentPassword = query.current as string
-    const newPassword = query.new as string
+  return async ({ body, headers, connection }: Request, res: Response, next: NextFunction) => {
+    const currentPassword = body.current as string
+    const newPassword = body.new as string
     const newPasswordInString = newPassword?.toString()
-    const repeatPassword = query.repeat
+    const repeatPassword = body.repeat
 
     if (!newPassword || newPassword === 'undefined') {
       res.status(401).send(res.__('Password cannot be empty.'))
@@ -36,7 +34,11 @@ export function changePassword () {
       return
     }
 
-    if (currentPassword && security.hash(currentPassword) !== loggedInUser.data.password) {
+    // Proving knowledge of the current password is mandatory, not just
+    // checked-when-present: a missing/empty `current` must be rejected the
+    // same way a wrong one is, otherwise a stolen or forged session token
+    // alone is enough to take over the account.
+    if (!currentPassword || security.hash(currentPassword) !== loggedInUser.data.password) {
       res.status(401).send(res.__('Current password is not correct.'))
       return
     }
@@ -49,10 +51,12 @@ export function changePassword () {
       }
 
       await user.update({ password: newPasswordInString })
-      challengeUtils.solveIf(
-        challenges.changePasswordBenderChallenge,
-        () => user.id === 3 && !currentPassword && user.password === security.hash('slurmCl4ssic')
-      )
+      // Revoke every other session for this account now that the password
+      // has changed, so a token obtained before the change (stolen, leaked,
+      // or otherwise not the one used to perform this change) stops working
+      // immediately instead of remaining valid for its full remaining
+      // lifetime. The token that performed the change stays valid.
+      security.authenticatedUsers.invalidateSessionsOf(user.id, token)
       res.json({ user })
     } catch (error) {
       next(error)

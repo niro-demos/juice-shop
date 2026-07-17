@@ -36,7 +36,16 @@ interface IAuthenticatedUsers {
   tokenOf: (user: UserModel) => string | undefined
   from: (req: Request) => ResponseWithUser | undefined
   updateFrom: (req: Request, user: ResponseWithUser) => any
+  invalidateSessionsOf: (userId: number, exceptToken?: string) => void
 }
+
+// Tokens revoked out-of-band (e.g. by a password change) that must stay
+// rejected even though their RSA signature and expiry are still valid.
+// `updateAuthenticatedUsers()` below would otherwise silently re-trust and
+// re-cache any signature-valid token it doesn't currently know about, so
+// revocation has to be tracked separately from `tokenMap` rather than by
+// deleting the cache entry alone.
+const revokedTokens = new Set<string>()
 
 export const hash = (data: string) => crypto.createHash('md5').update(data).digest('hex')
 export const hmac = (data: string) => crypto.createHmac('sha256', 'pa4qacea4VK9t9nGv7yZtwmj').update(data).digest('hex')
@@ -75,7 +84,10 @@ export const authenticatedUsers: IAuthenticatedUsers = {
     this.idMap[user.data.id] = token
   },
   get: function (token?: string) {
-    return token ? this.tokenMap[utils.unquote(token)] : undefined
+    if (!token) return undefined
+    const normalizedToken = utils.unquote(token)
+    if (revokedTokens.has(normalizedToken)) return undefined
+    return this.tokenMap[normalizedToken]
   },
   tokenOf: function (user: UserModel) {
     return user ? this.idMap[user.id] : undefined
@@ -87,6 +99,16 @@ export const authenticatedUsers: IAuthenticatedUsers = {
   updateFrom: function (req: Request, user: ResponseWithUser) {
     const token = utils.jwtFrom(req)
     this.put(token, user)
+  },
+  invalidateSessionsOf: function (userId: number, exceptToken?: string) {
+    const keepToken = exceptToken ? utils.unquote(exceptToken) : undefined
+    for (const token of Object.keys(this.tokenMap)) {
+      if (token === keepToken) continue
+      if (this.tokenMap[token]?.data?.id === userId) {
+        revokedTokens.add(token)
+        delete this.tokenMap[token]
+      }
+    }
   }
 }
 
@@ -175,7 +197,11 @@ export const isCustomer = (req: Request) => {
 export const appendUserId = () => {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
-      req.body.UserId = authenticatedUsers.tokenMap[utils.jwtFrom(req)].data.id
+      const user = authenticatedUsers.get(utils.jwtFrom(req))
+      if (!user) {
+        throw new Error('Not authenticated')
+      }
+      req.body.UserId = user.data.id
       next()
     } catch (error: unknown) {
       res.status(401).json({ status: 'error', message: utils.getErrorMessage(error) })
@@ -185,7 +211,10 @@ export const appendUserId = () => {
 
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
-  if (token && authenticatedUsers.get(token) === undefined) {
+  // A revoked token (e.g. one invalidated by a password change) must stay
+  // rejected instead of being silently re-trusted and re-cached here just
+  // because its RSA signature and expiry are still technically valid.
+  if (token && !revokedTokens.has(utils.unquote(token)) && authenticatedUsers.get(token) === undefined) {
     jwt.verify(token, publicKey, (err: Error | null, decoded: any) => {
       if (err === null && decoded?.data !== undefined) {
         authenticatedUsers.put(token, decoded)

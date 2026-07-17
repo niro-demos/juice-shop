@@ -19,7 +19,7 @@ before(async () => {
 }, { timeout: 60000 })
 
 void describe('/rest/user/change-password', () => {
-  void it('GET password change for newly created user with recognized token as Authorization header', async () => {
+  void it('POST password change for newly created user with recognized token as Authorization header', async () => {
     await request(app)
       .post('/api/Users')
       .set({ 'content-type': 'application/json' })
@@ -32,45 +32,53 @@ void describe('/rest/user/change-password', () => {
     const { token } = await login(app, { email: 'kuni@be.rt', password: 'kunigunde' })
 
     const res = await request(app)
-      .get('/rest/user/change-password?current=kunigunde&new=foo&repeat=foo')
-      .set({ Authorization: 'Bearer ' + token })
+      .post('/rest/user/change-password')
+      .set({ Authorization: 'Bearer ' + token, 'content-type': 'application/json' })
+      .send({ current: 'kunigunde', new: 'foo', repeat: 'foo' })
 
     assert.equal(res.status, 200)
   })
 
-  void it('GET password change with passing wrong current password', async () => {
+  void it('POST password change with passing wrong current password', async () => {
     const { token } = await login(app, {
       email: 'bjoern@' + config.get<string>('application.domain'),
       password: 'monkey summer birthday are all bad passwords but work just fine in a long passphrase'
     })
 
     const res = await request(app)
-      .get('/rest/user/change-password?current=definetely_wrong&new=blubb&repeat=blubb')
-      .set({ Authorization: 'Bearer ' + token })
+      .post('/rest/user/change-password')
+      .set({ Authorization: 'Bearer ' + token, 'content-type': 'application/json' })
+      .send({ current: 'definetely_wrong', new: 'blubb', repeat: 'blubb' })
 
     assert.equal(res.status, 401)
     assert.ok(res.text.includes('Current password is not correct'))
   })
 
-  void it('GET password change without passing any passwords', async () => {
+  void it('POST password change without passing any passwords', async () => {
     const res = await request(app)
-      .get('/rest/user/change-password')
+      .post('/rest/user/change-password')
+      .set({ 'content-type': 'application/json' })
+      .send({})
 
     assert.equal(res.status, 401)
     assert.ok(res.text.includes('Password cannot be empty'))
   })
 
-  void it('GET password change with passing wrong repeated password', async () => {
+  void it('POST password change with passing wrong repeated password', async () => {
     const res = await request(app)
-      .get('/rest/user/change-password?new=foo&repeat=bar')
+      .post('/rest/user/change-password')
+      .set({ 'content-type': 'application/json' })
+      .send({ new: 'foo', repeat: 'bar' })
 
     assert.equal(res.status, 401)
     assert.ok(res.text.includes('New and repeated password do not match'))
   })
 
-  void it('GET password change without passing an authorization token', async () => {
+  void it('POST password change without passing an authorization token', async () => {
     const res = await request(app)
-      .get('/rest/user/change-password?new=foo&repeat=foo')
+      .post('/rest/user/change-password')
+      .set({ 'content-type': 'application/json' })
+      .send({ new: 'foo', repeat: 'foo' })
 
     assert.equal(res.status, 500)
     assert.ok(res.headers['content-type']?.includes('text/html'))
@@ -78,10 +86,11 @@ void describe('/rest/user/change-password', () => {
     assert.ok(res.text.includes('Error: Blocked illegal activity'))
   })
 
-  void it('GET password change with passing unrecognized authorization token', async () => {
+  void it('POST password change with passing unrecognized authorization token', async () => {
     const res = await request(app)
-      .get('/rest/user/change-password?new=foo&repeat=foo')
-      .set({ Authorization: 'Bearer unknown' })
+      .post('/rest/user/change-password')
+      .set({ Authorization: 'Bearer unknown', 'content-type': 'application/json' })
+      .send({ new: 'foo', repeat: 'foo' })
 
     assert.equal(res.status, 500)
     assert.ok(res.headers['content-type']?.includes('text/html'))
@@ -89,17 +98,96 @@ void describe('/rest/user/change-password', () => {
     assert.ok(res.text.includes('Error: Blocked illegal activity'))
   })
 
-  void it('GET password change for Bender without current password using GET request', async () => {
-    const { token } = await login(app, {
-      email: 'bender@' + config.get<string>('application.domain'),
-      password: 'OhG0dPlease1nsertLiquor!'
-    })
+  // Regression test for TC-1304EB9E: the current-password check used to be
+  // skipped entirely (`if (currentPassword && ...)`) whenever `current` was
+  // omitted, so any valid session token was enough to overwrite the account
+  // password without proving knowledge of the existing one.
+  void it('rejects a password change that omits the current password, even with a valid session token, and leaves the password unchanged', async () => {
+    await request(app)
+      .post('/api/Users')
+      .set({ 'content-type': 'application/json' })
+      .send({ email: 'niro-tc1304eb9e@test.com', password: 'OrigPass123!' })
+      .expect(201)
+
+    const { token } = await login(app, { email: 'niro-tc1304eb9e@test.com', password: 'OrigPass123!' })
 
     const res = await request(app)
-      .get('/rest/user/change-password?new=slurmCl4ssic&repeat=slurmCl4ssic')
+      .post('/rest/user/change-password')
+      .set({ Authorization: 'Bearer ' + token, 'content-type': 'application/json' })
+      .send({ new: 'VectorPwn123!', repeat: 'VectorPwn123!' })
+
+    assert.equal(res.status, 401)
+    assert.ok(res.text.includes('Current password is not correct'))
+
+    // The original password must still work - the omitted-current bypass
+    // must not have mutated anything.
+    const stillOriginal = await login(app, { email: 'niro-tc1304eb9e@test.com', password: 'OrigPass123!' })
+    assert.ok(stillOriginal.token)
+  })
+
+  // Regression test for TC-0F2D5A3F: changing the password used to leave
+  // every other outstanding session token for the account fully authorized
+  // for its remaining lifetime, so a stolen/leaked token kept working after
+  // the legitimate owner "locked out" the attacker by changing the password.
+  void it('invalidates other active session tokens for the account when the password is changed', async () => {
+    await request(app)
+      .post('/api/Users')
+      .set({ 'content-type': 'application/json' })
+      .send({ email: 'niro-tc0f2d5a3f@test.com', password: 'OldPass123!' })
+      .expect(201)
+
+    const sessionA = await login(app, { email: 'niro-tc0f2d5a3f@test.com', password: 'OldPass123!' })
+    // JWTs are only unique per-second (no jti claim), so log in again a
+    // second later to guarantee two genuinely distinct session tokens.
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    const sessionB = await login(app, { email: 'niro-tc0f2d5a3f@test.com', password: 'OldPass123!' })
+    assert.notEqual(sessionA.token, sessionB.token)
+
+    // Baseline: both sessions can read the account's basket before the change.
+    await request(app).get(`/rest/basket/${sessionA.bid}`).set({ Authorization: 'Bearer ' + sessionA.token }).expect(200)
+    await request(app).get(`/rest/basket/${sessionB.bid}`).set({ Authorization: 'Bearer ' + sessionB.token }).expect(200)
+
+    // Change the password using only session A.
+    const changeRes = await request(app)
+      .post('/rest/user/change-password')
+      .set({ Authorization: 'Bearer ' + sessionA.token, 'content-type': 'application/json' })
+      .send({ current: 'OldPass123!', new: 'NewPass456!', repeat: 'NewPass456!' })
+    assert.equal(changeRes.status, 200)
+
+    // The session that performed the change stays authorized (positive control).
+    await request(app).get(`/rest/basket/${sessionA.bid}`).set({ Authorization: 'Bearer ' + sessionA.token }).expect(200)
+
+    // Session B was never consulted for the change and must now be rejected.
+    await request(app).get(`/rest/basket/${sessionB.bid}`).set({ Authorization: 'Bearer ' + sessionB.token }).expect(401)
+  })
+
+  // Regression test for TC-C88B5020: the endpoint used to accept the
+  // current/new/repeat passwords as URL query parameters on a GET request,
+  // which the global morgan access-log middleware then persisted in
+  // plaintext to disk. GET is no longer routed at all, so credentials can no
+  // longer travel in the request line.
+  void it('no longer accepts a password change via GET with credentials in the query string', async () => {
+    await request(app)
+      .post('/api/Users')
+      .set({ 'content-type': 'application/json' })
+      .send({ email: 'niro-tcc88b5020@test.com', password: 'InitPass123!' })
+      .expect(201)
+
+    const { token } = await login(app, { email: 'niro-tcc88b5020@test.com', password: 'InitPass123!' })
+
+    const res = await request(app)
+      .get('/rest/user/change-password?current=InitPass123!&new=VectorTest123!&repeat=VectorTest123!')
       .set({ Authorization: 'Bearer ' + token })
 
-    assert.equal(res.status, 200)
+    // GET is no longer a routed method for this endpoint at all, so the
+    // request never reaches the handler and the credentials never appear on
+    // a route that morgan would log with query-string details.
+    assert.equal(res.status, 500)
+    assert.ok(res.text.includes('Unexpected path: /rest/user/change-password'))
+
+    // The password must not have changed.
+    const stillOriginal = await login(app, { email: 'niro-tcc88b5020@test.com', password: 'InitPass123!' })
+    assert.ok(stillOriginal.token)
   })
 })
 
