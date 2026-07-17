@@ -28,7 +28,9 @@ export function captchas () {
     }
     const captchaInstance = CaptchaModel.build(captcha)
     await captchaInstance.save()
-    res.json(captcha)
+    // Only the challenge (captchaId + expression) is sent to the client; the
+    // solution stays server-side and is compared against in verifyCaptcha().
+    res.json({ captchaId, captcha: expression })
   }
 }
 
