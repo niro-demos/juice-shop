@@ -87,7 +87,7 @@ void describe('/dataerasure', () => {
     assert.equal(res.status, 200)
   })
 
-  void it('POST erasure request with non-existing file path as layout parameter throws error', async () => {
+  void it('POST erasure request ignores a `layout` parameter that traverses to a non-existing filesystem path', async () => {
     const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
 
     const res = await request(app)
@@ -95,11 +95,15 @@ void describe('/dataerasure', () => {
       .set({ Cookie: 'token=' + token })
       .send({ layout: '../this/file/does/not/exist' })
 
-    assert.equal(res.status, 500)
-    assert.ok(res.text.includes('no such file or directory'))
+    // The layout value must never be resolved as a filesystem path, so a
+    // nonexistent traversal target must not surface an ENOENT/stack trace —
+    // the fixed confirmation template renders normally instead.
+    assert.equal(res.status, 200)
+    assert.ok(!res.text.includes('no such file or directory'))
+    assert.ok(res.text.includes('Sorry to see you leave'))
   })
 
-  void it('POST erasure request with existing file path as layout parameter returns content truncated', async () => {
+  void it('POST erasure request ignores a `layout` parameter naming a real file and never discloses its contents', async () => {
     const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
 
     const res = await request(app)
@@ -107,8 +111,35 @@ void describe('/dataerasure', () => {
       .set({ Cookie: 'token=' + token })
       .send({ layout: '../package.json' })
 
+    // Invariant: the data-erasure endpoint must only ever render its own
+    // fixed confirmation template, never a client-chosen file's contents.
     assert.equal(res.status, 200)
-    assert.ok(res.text.includes('juice-shop'))
-    assert.ok(res.text.includes('......'))
+    assert.ok(!res.text.includes('"name": "juice-shop"'))
+    assert.ok(res.text.includes('Sorry to see you leave'))
+  })
+
+  void it('POST erasure request ignores a `layout` parameter naming an unrelated existing view', async () => {
+    const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
+
+    // Positive control: a legitimate request (no layout override) renders
+    // the fixed confirmation content.
+    const legitRes = await request(app)
+      .post('/dataerasure/')
+      .set({ Cookie: 'token=' + token })
+      .send({ email: 'bjoern.kimminich@gmail.com' })
+    assert.equal(legitRes.status, 200)
+    assert.ok(legitRes.text.includes('Sorry to see you leave'))
+
+    // Exploit attempt: `layout` names a real, unrelated view file
+    // (dataErasureForm.hbs). Per the invariant this must be ignored — the
+    // response must still be the fixed confirmation, never the other view.
+    const res = await request(app)
+      .post('/dataerasure/')
+      .set({ Cookie: 'token=' + token })
+      .send({ layout: 'dataErasureForm' })
+
+    assert.equal(res.status, 200)
+    assert.ok(res.text.includes('Sorry to see you leave'))
+    assert.ok(!res.text.includes('Data Erasure Request (Art. 17 GDPR)'))
   })
 })
