@@ -25,13 +25,19 @@ function ensureFileIsPassed ({ file }: Request, res: Response, next: NextFunctio
 }
 
 async function extractZipBuffer (buffer: Buffer) {
+  const uploadDir = path.resolve('uploads/complaints/')
   const directory = await unzipper.Open.buffer(buffer)
   for (const entry of directory.files) {
     const fileName = entry.path
-    const absolutePath = path.resolve('uploads/complaints/' + fileName)
+    const absolutePath = path.resolve(uploadDir, fileName)
     challengeUtils.solveIf(challenges.fileWriteChallenge, () => { return absolutePath === path.resolve('ftp/legal.md') })
-    if (absolutePath.includes(path.resolve('.'))) {
-      await pipeline(entry.stream(), fs.createWriteStream('uploads/complaints/' + fileName))
+    // Only extract entries whose resolved path is actually contained within
+    // uploadDir - a substring/prefix check (e.g. `.includes(root)`) is not
+    // sufficient, since a traversal entry like `../../ftp/legal.md` also
+    // resolves to a path that contains the project root as a substring.
+    const isWithinUploadDir = absolutePath === uploadDir || absolutePath.startsWith(uploadDir + path.sep)
+    if (isWithinUploadDir) {
+      await pipeline(entry.stream(), fs.createWriteStream(absolutePath))
     }
   }
 }
