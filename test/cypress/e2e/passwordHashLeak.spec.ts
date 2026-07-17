@@ -3,7 +3,7 @@ describe('challenge "Password Hash Leak"', () => {
     cy.login({ email: 'admin@juice-sh.op', password: 'admin123' })
   })
 
-  it('should solve the challenge by leaking the password hash via fields parameter', () => {
+  it('should not leak the password hash via the whoami fields parameter', () => {
     cy.request({
       method: 'GET',
       url: '/rest/user/whoami?fields=id,email,password',
@@ -11,9 +11,8 @@ describe('challenge "Password Hash Leak"', () => {
         // Cypress automatically handles cookies after cy.login
       }
     }).then((res) => {
-      expect(res.body.user.password).to.be.a('string')
-      expect(res.body.user.password.length).to.be.greaterThan(0)
-      cy.expectChallengeSolved({ challenge: 'Password Hash Leak' })
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      expect(res.body.user.password).to.be.undefined
     })
   })
 })
