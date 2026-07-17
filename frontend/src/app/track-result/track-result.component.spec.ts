@@ -60,12 +60,13 @@ describe('TrackResultComponent', () => {
         expect(component).toBeTruthy()
     })
 
-    it('should consider order number as trusted HTML', () => {
+    it('should store the raw order id without bypassing Angular\'s HTML sanitizer', () => {
         component.orderId = '<a src="link">Link</a>'
         trackOrderService.find.mockReturnValue(of({ data: [{ orderId: component.orderId }] }))
         component.ngOnInit()
 
-        expect(sanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith('<code><a src="link">Link</a></code>')
+        expect(sanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalled()
+        expect(component.results.orderNo).toBe('<a src="link">Link</a>')
     })
 
     it('should set "delivered" status for delivered orders', () => {
@@ -155,5 +156,65 @@ describe('TrackResultComponent', () => {
             renderWith({ bonus: 42, products: [] })
             expect((fixture.nativeElement as HTMLElement).querySelector('.bonus-container')).toBeTruthy()
         })
+    })
+})
+
+// Regression suite for TC-BAF21214 (reflected XSS via the order-tracking
+// `id`). Deliberately does NOT mock DomSanitizer: the whole point is to
+// exercise Angular's *real* [innerHtml]/interpolation pipeline, since a
+// hand-rolled mock of bypassSecurityTrustHtml can't reproduce (or disprove)
+// the actual DOM-level invariant under test.
+describe('TrackResultComponent - Reflected XSS regression (TC-BAF21214)', () => {
+    let component: TrackResultComponent
+    let fixture: ComponentFixture<TrackResultComponent>
+    let trackOrderService: any
+
+    beforeEach(async () => {
+        trackOrderService = {
+            find: vi.fn().mockName('TrackOrderService.find')
+        }
+
+        TestBed.configureTestingModule({
+            imports: [TranslateModule.forRoot(),
+                RouterTestingModule,
+                MatCardModule,
+                MatTableModule,
+                TrackResultComponent],
+            providers: [
+                { provide: TrackOrderService, useValue: trackOrderService },
+                provideHttpClient(withInterceptorsFromDi()),
+                provideHttpClientTesting()
+                // No DomSanitizer override here on purpose - see suite comment above.
+            ]
+        })
+            .compileComponents()
+
+        fixture = TestBed.createComponent(TrackResultComponent)
+        component = fixture.componentInstance
+    })
+
+    it('should never render an unmatched order id as live, executable markup', () => {
+        const payload = '<img src=x onerror="window.__niroTrackXssFired=true">'
+        trackOrderService.find.mockReturnValue(of({ data: [{ orderId: payload }] }))
+        component.ngOnInit()
+        fixture.detectChanges()
+
+        const heading = (fixture.nativeElement as HTMLElement).querySelector('h1')
+        expect(heading).toBeTruthy()
+        // INVARIANT: the order id shown back to the user must be inert text -
+        // no live element/event-handler may be parsed into the rendered DOM,
+        // even though the literal payload text is still visible to the user.
+        expect(heading!.querySelector('img')).toBeNull()
+        expect(heading!.querySelector('[onerror]')).toBeNull()
+        expect(heading!.textContent).toContain(payload)
+    })
+
+    it('should still render a benign order id as visible text (positive control)', () => {
+        trackOrderService.find.mockReturnValue(of({ data: [{ orderId: 'ORDER-1234' }] }))
+        component.ngOnInit()
+        fixture.detectChanges()
+
+        const heading = (fixture.nativeElement as HTMLElement).querySelector('h1')
+        expect(heading!.textContent).toContain('ORDER-1234')
     })
 })

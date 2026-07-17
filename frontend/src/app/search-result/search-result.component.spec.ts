@@ -215,10 +215,11 @@ describe('SearchResultComponent', () => {
         expect(component.dataSource.filter).toEqual('product search')
     })
 
-    it('should pass the search query as trusted HTML', () => {
+    it('should assign the raw search query without bypassing Angular\'s HTML sanitizer', () => {
         activatedRoute.setQueryParameter('<script>scripttag</script>')
         component.filterTable()
-        expect(sanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith('<script>scripttag</script>')
+        expect(sanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalled()
+        expect(component.searchValue).toBe('<script>scripttag</script>')
     })
 
     describe('template rendering', () => {
@@ -409,5 +410,102 @@ describe('SearchResultComponent', () => {
             const freshComponent = freshFixture.componentInstance
             expect(() => freshComponent.ngOnDestroy()).not.toThrow()
         })
+    })
+})
+
+// Regression suite for TC-24619B04 (DOM XSS via the unsanitized `q` search
+// query parameter). Deliberately does NOT mock DomSanitizer: the whole point
+// is to exercise Angular's *real* [innerHTML] sanitization pipeline, since a
+// hand-rolled mock of bypassSecurityTrustHtml can't reproduce (or disprove)
+// the actual DOM-level invariant under test.
+describe('SearchResultComponent - DOM XSS regression (TC-24619B04)', () => {
+    let component: SearchResultComponent
+    let fixture: ComponentFixture<SearchResultComponent>
+    let productService: any
+    let quantityService: any
+    let deluxeGuard: any
+    let socketIoService: any
+    let mockSocket: MockSocket
+    let activatedRoute: MockActivatedRoute
+
+    beforeEach(async () => {
+        quantityService = { getAll: vi.fn().mockName('QuantityService.getAll') }
+        quantityService.getAll.mockReturnValue(of([]))
+        productService = {
+            search: vi.fn().mockName('ProductService.search'),
+            get: vi.fn().mockName('ProductService.get')
+        }
+        productService.search.mockReturnValue(of([]))
+        productService.get.mockReturnValue(of({}))
+        deluxeGuard = { isDeluxe: vi.fn() }
+        deluxeGuard.isDeluxe.mockReturnValue(false)
+        mockSocket = new MockSocket()
+        socketIoService = { socket: vi.fn().mockName('SocketIoService.socket') }
+        socketIoService.socket.mockReturnValue(mockSocket as unknown as ReturnType<SocketIoService['socket']>)
+        activatedRoute = new MockActivatedRoute()
+
+        await TestBed.configureTestingModule({
+            imports: [
+                TranslateModule.forRoot(),
+                MatTableModule,
+                MatPaginatorModule,
+                MatDialogModule,
+                MatDividerModule,
+                MatGridListModule,
+                MatCardModule,
+                SearchResultComponent
+            ],
+            providers: [
+                provideRouter([]),
+                {
+                    provide: BasketService,
+                    useValue: {
+                        find: vi.fn().mockReturnValue(of({ Products: [] })),
+                        get: vi.fn().mockReturnValue(of({})),
+                        put: vi.fn().mockReturnValue(of({})),
+                        save: vi.fn().mockReturnValue(of({})),
+                        updateNumberOfCartItems: vi.fn()
+                    }
+                },
+                { provide: ProductService, useValue: productService },
+                { provide: ActivatedRoute, useValue: activatedRoute },
+                { provide: SocketIoService, useValue: socketIoService },
+                { provide: QuantityService, useValue: quantityService },
+                { provide: DeluxeGuard, useValue: deluxeGuard },
+                provideHttpClient(withInterceptorsFromDi()),
+                provideHttpClientTesting()
+                // No DomSanitizer override here on purpose - see suite comment above.
+            ]
+        }).compileComponents()
+
+        fixture = TestBed.createComponent(SearchResultComponent)
+        component = fixture.componentInstance
+        component.ngAfterViewInit()
+        fixture.detectChanges()
+    })
+
+    it('should never let a crafted `q` value reach the DOM as live, executable markup', () => {
+        const payload = '<img src=x onerror="window.__niroSearchXssFired=true">'
+        activatedRoute.setQueryParameter(payload)
+        component.filterTable()
+        fixture.detectChanges()
+
+        const searchValueEl = (fixture.nativeElement as HTMLElement).querySelector('#searchValue')
+        expect(searchValueEl).toBeTruthy()
+        // INVARIANT: text typed into search must never execute as HTML/JS -
+        // Angular's sanitizer may keep the harmless <img> tag itself, but the
+        // onerror event-handler attribute must never survive into the DOM.
+        expect(searchValueEl!.querySelector('[onerror]')).toBeNull()
+        expect(searchValueEl!.innerHTML.toLowerCase()).not.toContain('onerror')
+    })
+
+    it('should still render a benign search term as visible text (positive control)', () => {
+        activatedRoute.setQueryParameter('juice')
+        component.filterTable()
+        fixture.detectChanges()
+
+        const searchValueEl = (fixture.nativeElement as HTMLElement).querySelector('#searchValue')
+        expect(searchValueEl).toBeTruthy()
+        expect(searchValueEl!.textContent).toContain('juice')
     })
 })
