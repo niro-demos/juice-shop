@@ -131,32 +131,34 @@ void describe('/public/images/padding', () => {
   })
 })
 
+// Regression coverage for TC-6B893CE7: /encryptionkeys used to be served by an
+// unauthenticated directory listing plus an open file server, letting any
+// visitor list and download the app's private key material - including
+// premium.key, the secret used elsewhere to derive/validate premium
+// membership. The invariant: that key material must not be listable or
+// downloadable by an unauthenticated visitor. There is no legitimate
+// end-user use case for browsing this folder over HTTP (the server reads
+// jwt.pub directly from disk), so the routes are removed outright; requests
+// now fall through to the same SPA shell every other unknown path gets,
+// exactly like the existing directory-traversal test above.
 void describe('/encryptionkeys', () => {
-  void it('GET serves a directory listing', async () => {
+  void it('GET no longer serves a directory listing to unauthenticated visitors', async () => {
     const res = await request(app)
       .get('/encryptionkeys')
     assert.equal(res.status, 200)
     assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes('<title>listing directory /encryptionkeys</title>'))
+    assert.ok(!res.text.includes('<title>listing directory /encryptionkeys</title>'))
+    assert.ok(!res.text.includes('premium.key'))
+    assert.ok(res.text.includes('scripts.js'))
   })
 
-  void it('GET a non-existing file in will return a 404 error', async () => {
-    const res = await request(app)
-      .get('/encryptionkeys/doesnotexist.md')
-    assert.equal(res.status, 404)
-  })
-
-  void it('GET the Premium Content AES key', async () => {
+  void it('GET the Premium Content AES key no longer leaks the secret to unauthenticated visitors', async () => {
     const res = await request(app)
       .get('/encryptionkeys/premium.key')
     assert.equal(res.status, 200)
-  })
-
-  void it('GET a key file whose name contains a "/" fails with a 403 error', async () => {
-    const res = await request(app)
-      .get('/encryptionkeys/%2fetc%2fos-release%2500.md')
-    assert.equal(res.status, 403)
-    assert.ok(res.text.includes('Error: File names cannot contain forward slashes!'))
+    assert.ok(res.headers['content-type']?.includes('text/html'))
+    assert.ok(!res.text.includes('1337133713371337'))
+    assert.ok(res.text.includes('scripts.js'))
   })
 })
 
@@ -201,10 +203,19 @@ void describe('Hidden URL', () => {
     assert.equal(res.status, 200)
   })
 
-  void it('GET folder containing access log files for "Access Log" challenge', async () => {
+  // Regression coverage for TC-CF1432B8: /support/logs used to be served by an
+  // unauthenticated directory listing plus an open file server, letting any
+  // visitor list and download every past visitor's IP, full request URLs,
+  // and the server's internal file paths. There is no legitimate reason to
+  // expose server logs through a public URL, so the routes are removed
+  // outright; the request now falls through to the same SPA shell every
+  // other unknown path gets, instead of the raw Morgan log content.
+  void it('GET access log file no longer leaks its content to unauthenticated visitors', async () => {
     const res = await request(app)
       .get('/support/logs/access.log.' + utils.toISO8601(new Date()))
     assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/octet-stream'))
+    assert.ok(res.headers['content-type']?.includes('text/html'))
+    assert.ok(!res.headers['content-type']?.includes('application/octet-stream'))
+    assert.ok(res.text.includes('scripts.js'))
   })
 })

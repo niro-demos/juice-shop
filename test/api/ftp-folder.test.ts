@@ -84,68 +84,82 @@ void describe('/ftp', () => {
     assert.equal(res.status, 200)
   })
 
-  void it('GET the easter egg file by using Poison Null Byte attack with .pdf suffix', async () => {
+  // Regression coverage for TC-471B9F9B: routes/fileServer.ts `verify()` used to
+  // check the `.md`/`.pdf` allowlist against the *raw* filename and only
+  // afterwards cut off a poison-null-byte payload before serving - so a name
+  // like `secret.bak%2500.md` passed the allowlist (raw string ends in `.md`)
+  // but resolved on disk (after normalization) to `secret.bak`, a file that
+  // is 403'd when requested directly. The invariant: files served from /ftp
+  // must be restricted to the declared allowed types - appending a poison
+  // null byte must not change which file is actually opened relative to
+  // which file was validated, for ANY file in that folder, not just the
+  // ones with a built-in "solve" hook.
+  void it('GET the easter egg file by using Poison Null Byte attack with .pdf suffix is blocked by the allowlist', async () => {
     const res = await request(app)
       .get('/ftp/eastere.gg%2500.pdf')
       .buffer(true)
-    assert.equal(res.status, 200)
-    assert.ok(responseText(res).includes('Congratulations, you found the easter egg!'))
+    assert.equal(res.status, 403)
+    assert.ok(res.text.includes('Only .md and .pdf files are allowed!'))
   })
 
-  void it('GET the easter egg file by using Poison Null Byte attack with .md suffix', async () => {
+  void it('GET the easter egg file by using Poison Null Byte attack with .md suffix is blocked by the allowlist', async () => {
     const res = await request(app)
       .get('/ftp/eastere.gg%2500.md')
       .buffer(true)
-    assert.equal(res.status, 200)
-    assert.ok(responseText(res).includes('Congratulations, you found the easter egg!'))
+    assert.equal(res.status, 403)
+    assert.ok(res.text.includes('Only .md and .pdf files are allowed!'))
   })
 
-  void it('GET the SIEM signature file by using Poison Null Byte attack with .pdf suffix', async () => {
+  void it('GET the SIEM signature file by using Poison Null Byte attack with .pdf suffix is blocked by the allowlist', async () => {
     const res = await request(app)
       .get('/ftp/suspicious_errors.yml%2500.pdf')
       .buffer(true)
-    assert.equal(res.status, 200)
-    assert.ok(responseText(res).includes('Suspicious error messages specific to the application'))
+    assert.equal(res.status, 403)
+    assert.ok(res.text.includes('Only .md and .pdf files are allowed!'))
   })
 
-  void it('GET the SIEM signature file by using Poison Null Byte attack with .md suffix', async () => {
+  void it('GET the SIEM signature file by using Poison Null Byte attack with .md suffix is blocked by the allowlist', async () => {
     const res = await request(app)
       .get('/ftp/suspicious_errors.yml%2500.md')
       .buffer(true)
-    assert.equal(res.status, 200)
-    assert.ok(responseText(res).includes('Suspicious error messages specific to the application'))
+    assert.equal(res.status, 403)
+    assert.ok(res.text.includes('Only .md and .pdf files are allowed!'))
   })
 
-  void it('GET the 2013 coupon code file by using Poison Null Byte attack with .pdf suffix', async () => {
+  void it('GET the 2013 coupon code file by using Poison Null Byte attack with .pdf suffix is blocked by the allowlist', async () => {
     const res = await request(app)
       .get('/ftp/coupons_2013.md.bak%2500.pdf')
       .buffer(true)
-    assert.equal(res.status, 200)
-    assert.ok(responseText(res).includes('n<MibgC7sn'))
+    assert.equal(res.status, 403)
+    assert.ok(res.text.includes('Only .md and .pdf files are allowed!'))
+    assert.ok(!responseText(res).includes('n<MibgC7sn'))
   })
 
-  void it('GET the 2013 coupon code file by using an Poison Null Byte attack with .md suffix', async () => {
+  void it('GET the 2013 coupon code file by using an Poison Null Byte attack with .md suffix is blocked by the allowlist', async () => {
     const res = await request(app)
       .get('/ftp/coupons_2013.md.bak%2500.md')
       .buffer(true)
-    assert.equal(res.status, 200)
-    assert.ok(responseText(res).includes('n<MibgC7sn'))
+    assert.equal(res.status, 403)
+    assert.ok(res.text.includes('Only .md and .pdf files are allowed!'))
+    assert.ok(!responseText(res).includes('n<MibgC7sn'))
   })
 
-  void it('GET the package.json.bak file by using Poison Null Byte attack with .pdf suffix', async () => {
+  void it('GET the package.json.bak file by using Poison Null Byte attack with .pdf suffix is blocked by the allowlist', async () => {
     const res = await request(app)
       .get('/ftp/package.json.bak%2500.pdf')
       .buffer(true)
-    assert.equal(res.status, 200)
-    assert.ok(responseText(res).includes('"name": "juice-shop",'))
+    assert.equal(res.status, 403)
+    assert.ok(res.text.includes('Only .md and .pdf files are allowed!'))
+    assert.ok(!responseText(res).includes('"name": "juice-shop",'))
   })
 
-  void it('GET the package.json.bak file by using Poison Null Byte attack with .md suffix', async () => {
+  void it('GET the package.json.bak file by using Poison Null Byte attack with .md suffix is blocked by the allowlist', async () => {
     const res = await request(app)
       .get('/ftp/package.json.bak%2500.md')
       .buffer(true)
-    assert.equal(res.status, 200)
-    assert.ok(responseText(res).includes('"name": "juice-shop",'))
+    assert.equal(res.status, 403)
+    assert.ok(res.text.includes('Only .md and .pdf files are allowed!'))
+    assert.ok(!responseText(res).includes('"name": "juice-shop",'))
   })
 
   void it('GET a restricted file directly from file system path on server by tricking route definitions fails with 403 error', async () => {
@@ -180,12 +194,12 @@ void describe('/ftp', () => {
     assert.equal(res.status, 404)
   })
 
-  void it('GET the package.json.bak file contains a dependency on epilogue-js for "Typosquatting" challenge', async () => {
+  void it('GET the package.json.bak file via Poison Null Byte no longer leaks its epilogue-js dependency line', async () => {
     const res = await request(app)
       .get('/ftp/package.json.bak%2500.md')
       .buffer(true)
-    assert.equal(res.status, 200)
-    assert.ok(responseText(res).includes('"epilogue-js": "~0.7",'))
+    assert.equal(res.status, 403)
+    assert.ok(!responseText(res).includes('"epilogue-js": "~0.7",'))
   })
 
   void it('GET file /ftp/quarantine/juicy_malware_linux_amd_64.url', async () => {

@@ -82,47 +82,60 @@ void describe('fileServer', () => {
     assert.equal(challenges.directoryListingChallenge.solved, true)
   })
 
-  void it('should solve "easterEggLevelOneChallenge" when requesting eastere.gg with Poison Null Byte attack', () => {
+  // Regression coverage for TC-471B9F9B: verify() used to check the allowlist
+  // against the raw, un-normalized filename and only afterwards cut off the
+  // poison-null-byte payload before serving, so a name ending in an allowed
+  // extension only *before* normalization (e.g. `package.json.bak%00.md`)
+  // passed the check but a different file (`package.json.bak`, which is
+  // blocked when requested directly) was the one actually opened. The
+  // allowlist must be evaluated against the same string that gets served -
+  // so none of these poison-null-byte requests may reach res.sendFile or
+  // solve their associated challenge any more.
+  void it('should reject "eastere.gg" via Poison Null Byte attack now that the allowlist runs on the normalized filename', () => {
     challenges.easterEggLevelOneChallenge = { solved: false, save } as unknown as Challenge
     req.params.file = 'eastere.gg%00.md'
 
     servePublicFiles()(req, res, next)
 
-    assert.equal(res.sendFile.mock.calls.length, 1)
-    assert.match(res.sendFile.mock.calls[0].arguments[0], /ftp[/\\]eastere\.gg/)
-    assert.equal(challenges.easterEggLevelOneChallenge.solved, true)
+    assert.equal(res.sendFile.mock.calls.length, 0)
+    assert.equal(next.mock.calls.length, 1)
+    assert.ok(next.mock.calls[0].arguments[0] instanceof Error)
+    assert.equal(challenges.easterEggLevelOneChallenge.solved, false)
   })
 
-  void it('should solve "forgottenDevBackupChallenge" when requesting package.json.bak with Poison Null Byte attack', () => {
+  void it('should reject "package.json.bak" via Poison Null Byte attack now that the allowlist runs on the normalized filename', () => {
     challenges.forgottenDevBackupChallenge = { solved: false, save } as unknown as Challenge
     req.params.file = 'package.json.bak%00.md'
 
     servePublicFiles()(req, res, next)
 
-    assert.equal(res.sendFile.mock.calls.length, 1)
-    assert.match(res.sendFile.mock.calls[0].arguments[0], /ftp[/\\]package\.json\.bak/)
-    assert.equal(challenges.forgottenDevBackupChallenge.solved, true)
+    assert.equal(res.sendFile.mock.calls.length, 0)
+    assert.equal(next.mock.calls.length, 1)
+    assert.ok(next.mock.calls[0].arguments[0] instanceof Error)
+    assert.equal(challenges.forgottenDevBackupChallenge.solved, false)
   })
 
-  void it('should solve "forgottenBackupChallenge" when requesting coupons_2013.md.bak with Poison Null Byte attack', () => {
+  void it('should reject "coupons_2013.md.bak" via Poison Null Byte attack now that the allowlist runs on the normalized filename', () => {
     challenges.forgottenBackupChallenge = { solved: false, save } as unknown as Challenge
     req.params.file = 'coupons_2013.md.bak%00.md'
 
     servePublicFiles()(req, res, next)
 
-    assert.equal(res.sendFile.mock.calls.length, 1)
-    assert.match(res.sendFile.mock.calls[0].arguments[0], /ftp[/\\]coupons_2013\.md\.bak/)
-    assert.equal(challenges.forgottenBackupChallenge.solved, true)
+    assert.equal(res.sendFile.mock.calls.length, 0)
+    assert.equal(next.mock.calls.length, 1)
+    assert.ok(next.mock.calls[0].arguments[0] instanceof Error)
+    assert.equal(challenges.forgottenBackupChallenge.solved, false)
   })
 
-  void it('should solve "misplacedSignatureFileChallenge" when requesting suspicious_errors.yml with Poison Null Byte attack', () => {
+  void it('should reject "suspicious_errors.yml" via Poison Null Byte attack now that the allowlist runs on the normalized filename', () => {
     challenges.misplacedSignatureFileChallenge = { solved: false, save } as unknown as Challenge
     req.params.file = 'suspicious_errors.yml%00.md'
 
     servePublicFiles()(req, res, next)
 
-    assert.equal(res.sendFile.mock.calls.length, 1)
-    assert.match(res.sendFile.mock.calls[0].arguments[0], /ftp[/\\]suspicious_errors\.yml/)
-    assert.equal(challenges.misplacedSignatureFileChallenge.solved, true)
+    assert.equal(res.sendFile.mock.calls.length, 0)
+    assert.equal(next.mock.calls.length, 1)
+    assert.ok(next.mock.calls[0].arguments[0] instanceof Error)
+    assert.equal(challenges.misplacedSignatureFileChallenge.solved, false)
   })
 })

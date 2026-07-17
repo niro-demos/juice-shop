@@ -24,9 +24,15 @@ export function servePublicFiles () {
   }
 
   function verify (file: string, res: Response, next: NextFunction) {
-    if (file && (endsWithAllowlistedFileType(file) || (file === 'incident-support.kdbx'))) {
-      file = security.cutOffPoisonNullByte(file)
+    // Normalize (cut off a poison null byte payload) BEFORE validating the
+    // extension, so the allowlist check and res.sendFile() below always
+    // operate on the exact same string. Checking the raw, un-normalized
+    // string and then serving the normalized one let a name like
+    // `secret.bak%2500.md` pass the `.md`/`.pdf` allowlist while actually
+    // resolving to `secret.bak` on disk.
+    file = security.cutOffPoisonNullByte(file)
 
+    if (file && (endsWithAllowlistedFileType(file) || (file === 'incident-support.kdbx'))) {
       challengeUtils.solveIf(challenges.directoryListingChallenge, () => { return file.toLowerCase() === 'acquisitions.md' })
       verifySuccessfulPoisonNullByteExploit(file)
 

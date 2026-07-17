@@ -79,13 +79,15 @@ describe('/', () => {
     })
   })
 
+  // Regression coverage for TC-CF1432B8: /support/logs used to be served by an
+  // unauthenticated directory listing plus an open file server. The route is
+  // now removed outright, so this is no longer solvable.
   describe('challenge "accessLogDisclosure"', () => {
-    it("should be able to access today's access log file", () => {
-      // cy.visit requires a text/html response hence cy.request has been used
+    it('is no longer solvable - access log file is no longer served over HTTP', () => {
       cy.task<Date>('toISO8601').then((date: Date) => {
-        cy.request(`/support/logs/access.log.${date.toString()}`)
+        cy.request({ url: `/support/logs/access.log.${date.toString()}`, failOnStatusCode: false })
+          .its('headers').its('content-type').should('include', 'text/html')
       })
-      cy.expectChallengeSolved({ challenge: 'Access Log' })
     })
   })
 })
