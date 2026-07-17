@@ -21,7 +21,12 @@ export function addMemory () {
 
 export function getMemories () {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const memories = await MemoryModel.findAll({ include: [UserModel] })
+    const memories = await MemoryModel.findAll({
+      include: [{
+        model: UserModel,
+        attributes: ['id', 'username'] // never expose password/deluxeToken/totpSecret/email/role on this public route
+      }]
+    })
     res.status(200).json({ status: 'success', data: memories })
   }
 }

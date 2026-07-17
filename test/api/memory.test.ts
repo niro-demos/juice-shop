@@ -102,6 +102,23 @@ void describe('/rest/memories', () => {
     assert.equal(res.body.data.UserId, 2)
   })
 
+  void it('GET memories must not leak the poster\'s password hash, deluxe token, TOTP secret, email, or role', async () => {
+    const res = await request(app)
+      .get('/rest/memories')
+    assert.equal(res.status, 200)
+    const memoriesWithUser = res.body.data.filter((memory: any) => memory.User)
+    assert.ok(memoriesWithUser.length > 0, 'expected at least one seeded memory with a joined User to assert against')
+    for (const memory of memoriesWithUser) {
+      assert.equal(typeof memory.User.id, 'number')
+      assert.equal(memory.User.password, undefined)
+      assert.equal(memory.User.deluxeToken, undefined)
+      assert.equal(memory.User.totpSecret, undefined)
+      assert.equal(memory.User.email, undefined)
+      assert.equal(memory.User.role, undefined)
+      assert.equal(memory.User.lastLoginIp, undefined)
+    }
+  })
+
   void it('Should not crash the node-js server when sending invalid content like described in CVE-2022-24434', async () => {
     const res = await request(app)
       .post('/rest/memories')

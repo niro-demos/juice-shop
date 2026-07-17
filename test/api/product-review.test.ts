@@ -48,15 +48,50 @@ void describe('/rest/products/:id/reviews', () => {
     assert.equal(res.status, 400)
   })
 
-  void it('PUT single product review can be created', async () => {
+  void it('PUT single product review is forbidden via public API without authentication', async () => {
     const res = await request(app)
       .put('/rest/products/1/reviews')
       .send({
         message: 'Lorem Ipsum',
         author: 'Anonymous'
       })
+    assert.equal(res.status, 401)
+  })
+
+  void it('PUT single product review can be created by an authenticated user', async () => {
+    const { token } = await login(app, {
+      email: 'jim@juice-sh.op',
+      password: 'ncc-1701'
+    })
+    const res = await request(app)
+      .put('/rest/products/1/reviews')
+      .set({ Authorization: `Bearer ${token}`, 'content-type': 'application/json' })
+      .send({
+        message: 'Lorem Ipsum',
+        author: 'Anonymous'
+      })
     assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
+  })
+
+  void it('PUT single product review always attributes the review to the authenticated caller, never a client-supplied author', async () => {
+    const { token } = await login(app, {
+      email: 'jim@juice-sh.op',
+      password: 'ncc-1701'
+    })
+    const putRes = await request(app)
+      .put('/rest/products/2/reviews')
+      .set({ Authorization: `Bearer ${token}`, 'content-type': 'application/json' })
+      .send({
+        message: 'I am definitely the admin - forged author regression test',
+        author: 'admin@juice-sh.op'
+      })
+    assert.equal(putRes.status, 201)
+
+    const getRes = await request(app).get('/rest/products/2/reviews')
+    const forgedReview = getRes.body.data.find((review: any) => review.message === 'I am definitely the admin - forged author regression test')
+    assert.ok(forgedReview, 'expected the created review to be present')
+    assert.equal(forgedReview.author, 'jim@juice-sh.op')
   })
 })
 
@@ -124,7 +159,8 @@ void describe('/rest/products/reviews', () => {
   })
 
   void it('PATCH multiple product review via injection', async () => {
-    const totalReviews = config.get<Product[]>('products').reduce((sum: number, { reviews = [] }: any) => sum + reviews.length, 1)
+    // + 2 accounts for the two reviews created earlier in this file by the authenticated PUT regression tests
+    const totalReviews = config.get<Product[]>('products').reduce((sum: number, { reviews = [] }: any) => sum + reviews.length, 2)
 
     const res = await request(app)
       .patch('/rest/products/reviews')

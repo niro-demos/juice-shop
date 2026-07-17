@@ -6,12 +6,24 @@
 import { type Request, type Response } from 'express'
 import { RecycleModel } from '../models/recycle'
 
+import * as security from '../lib/insecurity'
 import * as utils from '../lib/utils'
 
 export const getRecycleItem = () => (req: Request, res: Response) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) {
+    return res.status(400).send('Invalid id')
+  }
+
+  const user = security.authenticatedUsers.from(req)
+  if (user?.data?.id === undefined) {
+    return res.status(401).send('Unauthorized')
+  }
+
   RecycleModel.findAll({
     where: {
-      id: JSON.parse(req.params.id)
+      id,
+      UserId: user.data.id // scope to the authenticated caller so no one can read another user's recycle record
     }
   }).then((Recycle) => {
     return res.send(utils.queryResultToJson(Recycle))

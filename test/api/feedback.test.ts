@@ -69,7 +69,7 @@ void describe('/api/Feedbacks', () => {
     })
   }
 
-  void it('POST feedback in another users name as anonymous user', async () => {
+  void it('POST feedback ignores a client-supplied UserId when submitted anonymously, including the admin account', async () => {
     const captchaRes = await request(app)
       .get('/rest/captcha')
     assert.equal(captchaRes.status, 200)
@@ -81,16 +81,16 @@ void describe('/api/Feedbacks', () => {
       .send({
         comment: 'Lousy crap! You use sequelize 1.7.x? Welcome to SQL Injection-land, morons! As if that is not bad enough, you use z85/base85 and hashids for crypto? Even MD5 to hash passwords! Srsly?!?!',
         rating: 1,
-        UserId: 3,
+        UserId: 1, // attempt to forge the feedback as the admin account (id 1)
         captchaId: captchaRes.body.captchaId,
         captcha: captchaRes.body.answer
       })
     assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(res.body.data.UserId, 3)
+    assert.equal(res.body.data.UserId, null)
   })
 
-  void it('POST feedback in a non-existing users name as anonymous user fails with constraint error', async () => {
+  void it('POST feedback in a non-existing users name as anonymous user is created anonymously instead of erroring', async () => {
     const captchaRes = await request(app)
       .get('/rest/captcha')
     assert.equal(captchaRes.status, 200)
@@ -106,9 +106,9 @@ void describe('/api/Feedbacks', () => {
         captchaId: captchaRes.body.captchaId,
         captcha: captchaRes.body.answer
       })
-    assert.equal(res.status, 500)
+    assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.ok(res.body.errors.includes('SQLITE_CONSTRAINT: FOREIGN KEY constraint failed'))
+    assert.equal(res.body.data.UserId, null)
   })
 
   void it('POST feedback is associated with current user', async () => {
@@ -137,7 +137,7 @@ void describe('/api/Feedbacks', () => {
     assert.equal(res.body.data.UserId, 4)
   })
 
-  void it('POST feedback is associated with any passed user ID', async () => {
+  void it('POST feedback ignores a client-supplied UserId and always attributes to the authenticated caller', async () => {
     const { token } = await login(app, {
       email: 'bjoern.kimminich@gmail.com',
       password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
@@ -152,15 +152,15 @@ void describe('/api/Feedbacks', () => {
       .post('/api/Feedbacks')
       .set({ Authorization: 'Bearer ' + token, 'content-type': 'application/json' })
       .send({
-        comment: 'Bender\'s choice award!',
+        comment: 'Bender\'s choice award, forged - regression test!',
         rating: 5,
-        UserId: 3,
+        UserId: 3, // bender's id - bjoern (id 4) tries to impersonate him
         captchaId: captchaRes.body.captchaId,
         captcha: captchaRes.body.answer
       })
     assert.equal(res.status, 201)
     assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(res.body.data.UserId, 3)
+    assert.equal(res.body.data.UserId, 4)
   })
 
   void it('POST feedback can be created without actually supplying comment', async () => {

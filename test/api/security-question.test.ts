@@ -103,4 +103,20 @@ void describe('/rest/user/security-question', () => {
 
     assert.equal(res.status, 200)
   })
+
+  // This unauthenticated endpoint doubles as an account-existence oracle and leaks the
+  // literal security question text (see finding TC-A3074F86). Requiring a session would
+  // break the legitimate "forgot password" flow, so it is throttled instead to blunt
+  // automated enumeration/scraping. Placed last so it doesn't consume the rate-limit
+  // budget the tests above rely on.
+  void it('rate limits repeated unauthenticated lookups to blunt account-existence / security-question enumeration', async () => {
+    const email = `jim@${config.get<string>('application.domain')}`
+    const requests = []
+    for (let i = 0; i < 101; i++) {
+      requests.push(request(app).get(`/rest/user/security-question?email=${email}`))
+    }
+    const results = await Promise.all(requests)
+    const rateLimited = results.filter((res) => res.status === 429)
+    assert.ok(rateLimited.length > 0, 'expected at least one request to be rate limited after exceeding the threshold')
+  })
 })

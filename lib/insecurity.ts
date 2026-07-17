@@ -183,6 +183,20 @@ export const appendUserId = () => {
   }
 }
 
+/**
+ * Like appendUserId(), but for endpoints that intentionally allow anonymous
+ * submissions: attributes the request to the authenticated caller when a
+ * session exists, otherwise strips any client-supplied UserId rather than
+ * rejecting the request or trusting an attacker-chosen value.
+ */
+export const overwriteUserId = () => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const user = authenticatedUsers.from(req)
+    req.body.UserId = user?.data ? user.data.id : undefined
+    next()
+  }
+}
+
 export const updateAuthenticatedUsers = () => (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token || utils.jwtFrom(req)
   if (token && authenticatedUsers.get(token) === undefined) {
