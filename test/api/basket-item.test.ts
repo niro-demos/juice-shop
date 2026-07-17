@@ -12,13 +12,14 @@ import { login } from './helpers/auth'
 
 let app: Express
 let authHeader: { Authorization: string, 'content-type': string }
+let ownBasketId: number
 
 before(
   async () => {
     const result = await createTestApp()
     app = result.app
 
-    const { token } = await login(app, {
+    const { token, bid } = await login(app, {
       email: 'jim@juice-sh.op',
       password: 'ncc-1701'
     })
@@ -26,6 +27,7 @@ before(
       Authorization: 'Bearer ' + token,
       'content-type': 'application/json'
     }
+    ownBasketId = bid
   },
   { timeout: 60000 }
 )
@@ -234,5 +236,97 @@ void describe('/api/BasketItems/:id', () => {
       .set(authHeader)
       .send({ quantity: 1 })
     assert.equal(res.status, 500)
+  })
+})
+
+void describe('/api/BasketItems cross-account ownership', () => {
+  let attackerAuthHeader: { Authorization: string, 'content-type': string }
+  let victimItemId: number
+
+  before(async () => {
+    const { token } = await login(app, {
+      email: 'bender@juice-sh.op',
+      password: 'OhG0dPlease1nsertLiquor!'
+    })
+    attackerAuthHeader = {
+      Authorization: 'Bearer ' + token,
+      'content-type': 'application/json'
+    }
+
+    const createRes = await request(app)
+      .post('/api/BasketItems')
+      .set(authHeader)
+      .send({ BasketId: ownBasketId, ProductId: 7, quantity: 1 })
+    assert.equal(createRes.status, 200)
+    victimItemId = createRes.body.data.id
+  })
+
+  void it('GET list as another customer must not disclose the victim\'s basket item', async () => {
+    const res = await request(app).get('/api/BasketItems').set(attackerAuthHeader)
+    assert.equal(res.status, 200)
+    assert.ok(!res.body.data.some((item: { id: number }) => item.id === victimItemId))
+  })
+
+  void it('GET by id as another customer must not disclose the victim\'s basket item', async () => {
+    const res = await request(app).get('/api/BasketItems/' + victimItemId).set(attackerAuthHeader)
+    assert.notEqual(res.status, 200)
+  })
+
+  void it('PUT as another customer must not change the victim\'s basket item quantity', async () => {
+    const res = await request(app)
+      .put('/api/BasketItems/' + victimItemId)
+      .set(attackerAuthHeader)
+      .send({ quantity: 2 })
+    assert.notEqual(res.status, 200)
+
+    const check = await request(app).get('/api/BasketItems/' + victimItemId).set(authHeader)
+    assert.equal(check.status, 200)
+    assert.equal(check.body.data.quantity, 1)
+  })
+
+  void it('DELETE as another customer must not remove the victim\'s basket item', async () => {
+    const res = await request(app).delete('/api/BasketItems/' + victimItemId).set(attackerAuthHeader)
+    assert.notEqual(res.status, 200)
+
+    const check = await request(app).get('/api/BasketItems/' + victimItemId).set(authHeader)
+    assert.equal(check.status, 200)
+  })
+})
+
+void describe('POST /api/BasketItems duplicate BasketId key', () => {
+  let attackerAuthHeader: { Authorization: string, 'content-type': string }
+  let attackerBasketId: number
+
+  before(async () => {
+    const { token, bid } = await login(app, {
+      email: 'bender@juice-sh.op',
+      password: 'OhG0dPlease1nsertLiquor!'
+    })
+    attackerAuthHeader = {
+      Authorization: 'Bearer ' + token,
+      'content-type': 'application/json'
+    }
+    attackerBasketId = bid
+  })
+
+  void it('rejects a single, unambiguous foreign BasketId (control)', async () => {
+    const res = await request(app)
+      .post('/api/BasketItems/')
+      .set(attackerAuthHeader)
+      .send({ ProductId: 8, BasketId: String(ownBasketId), quantity: 1 })
+    assert.equal(res.status, 401)
+    assert.equal(res.text, "{'error' : 'Invalid BasketId'}")
+  })
+
+  void it('must not add a product to the victim\'s basket via a duplicate BasketId JSON key', async () => {
+    const rawBody = `{"ProductId":24,"BasketId":"${attackerBasketId}","quantity":1,"BasketId":"${ownBasketId}"}`
+    const res = await request(app)
+      .post('/api/BasketItems/')
+      .set(attackerAuthHeader)
+      .send(rawBody)
+    assert.notEqual(res.status, 200)
+
+    const victimItems = await request(app).get('/api/BasketItems').set(authHeader)
+    assert.ok(!victimItems.body.data.some((item: { ProductId: number }) => item.ProductId === 24))
   })
 })

@@ -186,3 +186,57 @@ void describe('/api/Addresss/:id', () => {
     assert.equal(res.body.data, 'Malicious activity detected.')
   })
 })
+
+void describe('/api/Addresss/:id cross-account ownership', () => {
+  let ownerAddressId: string
+  let attackerAuthHeader: { Authorization: string, 'content-type': string }
+
+  before(async () => {
+    const res = await request(app).post('/api/Addresss').set(authHeader).send({
+      fullName: 'Jim',
+      mobileNum: '9800000000',
+      zipCode: 'NX 101',
+      streetAddress: 'Bakers Street',
+      city: 'NYC',
+      state: 'NY',
+      country: 'USA'
+    })
+    assert.equal(res.status, 201)
+    ownerAddressId = res.body.data.id
+
+    const { token } = await login(app, {
+      email: 'bender@juice-sh.op',
+      password: 'OhG0dPlease1nsertLiquor!'
+    })
+    attackerAuthHeader = {
+      Authorization: 'Bearer ' + token,
+      'content-type': 'application/json'
+    }
+  })
+
+  void it('PUT by a non-owner must not overwrite or steal another customer\'s address', async () => {
+    const res = await request(app)
+      .put('/api/Addresss/' + ownerAddressId)
+      .set(attackerAuthHeader)
+      .send({
+        fullName: 'HACKED by attacker',
+        mobileNum: '9800000000',
+        zipCode: 'NX 101',
+        streetAddress: 'Pwned Street 1',
+        city: 'Pwned City',
+        state: 'X',
+        country: 'X'
+      })
+    assert.notEqual(res.status, 200)
+
+    const check = await request(app)
+      .get('/api/Addresss/' + ownerAddressId)
+      .set(authHeader)
+    assert.equal(check.status, 200)
+    assert.equal(check.body.data.fullName, 'Jim')
+    assert.equal(check.body.data.streetAddress, 'Bakers Street')
+
+    const ownerList = await request(app).get('/api/Addresss').set(authHeader)
+    assert.ok(ownerList.body.data.some((address: { id: string }) => String(address.id) === String(ownerAddressId)))
+  })
+})

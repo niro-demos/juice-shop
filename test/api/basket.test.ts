@@ -17,6 +17,7 @@ import * as security from '../../lib/insecurity'
 
 let app: Express
 let authHeader: { Authorization: string, 'content-type': string }
+let ownBasketId: number
 
 const validCoupon = security.generateCoupon(15)
 const outdatedCoupon = security.generateCoupon(20, new Date(2001, 0, 1))
@@ -27,7 +28,7 @@ before(
     const result = await createTestApp()
     app = result.app
 
-    const { token } = await login(app, {
+    const { token, bid } = await login(app, {
       email: 'jim@juice-sh.op',
       password: 'ncc-1701'
     })
@@ -35,6 +36,7 @@ before(
       Authorization: 'Bearer ' + token,
       'content-type': 'application/json'
     }
+    ownBasketId = bid
   },
   { timeout: 60000 }
 )
@@ -53,7 +55,15 @@ void describe('/rest/basket/:id', () => {
   })
 
   void it('GET existing basket with contained products by id', async () => {
-    const res = await request(app).get('/rest/basket/1').set(authHeader)
+    // Basket 1 belongs to the admin account (seeded 1:1 with UserId), so it must be
+    // fetched as its rightful owner now that basket reads are ownership-scoped.
+    const { token: adminToken } = await login(app, {
+      email: 'admin@' + config.get<string>('application.domain'),
+      password: 'admin123'
+    })
+    const res = await request(app)
+      .get('/rest/basket/1')
+      .set({ Authorization: 'Bearer ' + adminToken, 'content-type': 'application/json' })
     assert.equal(res.status, 200)
     assert.ok(res.headers['content-type']?.includes('application/json'))
     assert.equal(res.body.data.id, 1)
@@ -61,8 +71,11 @@ void describe('/rest/basket/:id', () => {
   })
 
   void it('GET basket should accept forged JWTs', async () => {
+    // The unsigned token claims the identity (id: 1, i.e. the admin account, which owns
+    // basket 1) without ever knowing the private key -- proving the alg:none forgery
+    // still authenticates as a real, resource-owning user under the ownership check.
     const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-    const payload = Buffer.from(JSON.stringify({ data: { email: 'jim@juice-sh.op' }, iat: 1508639612, exp: 9999999999 })).toString('base64url')
+    const payload = Buffer.from(JSON.stringify({ data: { id: 1, email: 'jim@juice-sh.op' }, iat: 1508639612, exp: 9999999999 })).toString('base64url')
     const unsignedToken = `${header}.${payload}.`
     const res = await request(app)
       .get('/rest/basket/1')
@@ -108,17 +121,23 @@ void describe('/api/Baskets/:id', () => {
 })
 
 void describe('/rest/basket/:id', () => {
-  void it('GET existing basket of another user', async () => {
-    const { token } = await login(app, {
+  void it('GET existing basket of another user is forbidden', async () => {
+    const { token, bid } = await login(app, {
       email: 'bjoern.kimminich@gmail.com',
       password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
     })
+    const otherUserAuthHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+
+    // Control: bjoern can read their own basket -- proves the account/session itself is healthy.
+    const ownRes = await request(app).get('/rest/basket/' + bid).set(otherUserAuthHeader)
+    assert.equal(ownRes.status, 200)
+    assert.equal(ownRes.body.data.id, bid)
+
+    // Attack: bjoern must not be able to read jim's basket (id 2) by simply supplying its id.
     const res = await request(app)
-      .get('/rest/basket/2')
-      .set({ Authorization: 'Bearer ' + token })
-    assert.equal(res.status, 200)
-    assert.ok(res.headers['content-type']?.includes('application/json'))
-    assert.equal(res.body.data.id, 2)
+      .get('/rest/basket/' + ownBasketId)
+      .set(otherUserAuthHeader)
+    assert.notEqual(res.status, 200)
   })
 })
 
@@ -204,7 +223,7 @@ void describe('/rest/basket/:id/checkout', () => {
 void describe('/rest/basket/:id/coupon/:coupon', () => {
   void it('PUT apply valid coupon to existing basket', async () => {
     const res = await request(app)
-      .put('/rest/basket/1/coupon/' + encodeURIComponent(validCoupon))
+      .put('/rest/basket/' + ownBasketId + '/coupon/' + encodeURIComponent(validCoupon))
       .set(authHeader)
     assert.equal(res.status, 200)
     assert.ok(res.headers['content-type']?.includes('application/json'))
@@ -213,14 +232,14 @@ void describe('/rest/basket/:id/coupon/:coupon', () => {
 
   void it('PUT apply invalid coupon is not accepted', async () => {
     const res = await request(app)
-      .put('/rest/basket/1/coupon/xxxxxxxxxx')
+      .put('/rest/basket/' + ownBasketId + '/coupon/xxxxxxxxxx')
       .set(authHeader)
     assert.equal(res.status, 404)
   })
 
   void it('PUT apply outdated coupon is not accepted', async () => {
     const res = await request(app)
-      .put('/rest/basket/1/coupon/' + encodeURIComponent(outdatedCoupon))
+      .put('/rest/basket/' + ownBasketId + '/coupon/' + encodeURIComponent(outdatedCoupon))
       .set(authHeader)
     assert.equal(res.status, 404)
   })
@@ -230,5 +249,26 @@ void describe('/rest/basket/:id/coupon/:coupon', () => {
       .put('/rest/basket/4711/coupon/' + encodeURIComponent(validCoupon))
       .set(authHeader)
     assert.equal(res.status, 500)
+  })
+
+  void it('PUT apply coupon to another user\'s basket is forbidden', async () => {
+    const { token } = await login(app, {
+      email: 'bender@juice-sh.op',
+      password: 'OhG0dPlease1nsertLiquor!'
+    })
+    const attackerAuthHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+
+    const before = await request(app).get('/rest/basket/' + ownBasketId).set(authHeader)
+    assert.equal(before.status, 200)
+    const couponBeforeAttack = before.body.data.coupon
+
+    const res = await request(app)
+      .put('/rest/basket/' + ownBasketId + '/coupon/' + encodeURIComponent(validCoupon))
+      .set(attackerAuthHeader)
+    assert.notEqual(res.status, 200)
+
+    const after = await request(app).get('/rest/basket/' + ownBasketId).set(authHeader)
+    assert.equal(after.status, 200)
+    assert.equal(after.body.data.coupon, couponBeforeAttack)
   })
 })

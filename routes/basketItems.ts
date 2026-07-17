@@ -33,13 +33,22 @@ export function addBasketItem () {
       }
     }
 
+    // A legitimate request never contains more than one BasketId key. Reject outright
+    // rather than letting the ownership check and the actual write read different
+    // occurrences of a duplicated key (the check must always see the value that gets used).
+    if (basketIds.length > 1) {
+      res.status(401).send('{\'error\' : \'Invalid BasketId\'}')
+      return
+    }
+
+    const resolvedBasketId = basketIds[basketIds.length - 1]
     const user = security.authenticatedUsers.from(req)
-    if (user && basketIds[0] && basketIds[0] !== 'undefined' && Number(user.bid) != Number(basketIds[0])) { // eslint-disable-line eqeqeq
+    if (user && resolvedBasketId && resolvedBasketId !== 'undefined' && Number(user.bid) != Number(resolvedBasketId)) { // eslint-disable-line eqeqeq
       res.status(401).send('{\'error\' : \'Invalid BasketId\'}')
     } else {
       const basketItem = {
         ProductId: productIds[productIds.length - 1],
-        BasketId: basketIds[basketIds.length - 1],
+        BasketId: resolvedBasketId,
         quantity: quantities[quantities.length - 1]
       }
       challengeUtils.solveIf(challenges.basketManipulateChallenge, () => { return user && basketItem.BasketId && basketItem.BasketId !== 'undefined' && user.bid != basketItem.BasketId }) // eslint-disable-line eqeqeq
@@ -51,6 +60,51 @@ export function addBasketItem () {
       } catch (error) {
         next(error)
       }
+    }
+  }
+}
+
+export function getBasketItems () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = security.authenticatedUsers.from(req)
+      const items = await BasketItemModel.findAll({ where: { BasketId: user?.bid ?? -1 } })
+      res.json({ status: 'success', data: items })
+    } catch (error) {
+      next(error)
+    }
+  }
+}
+
+export function getBasketItemById () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = security.authenticatedUsers.from(req)
+      const item = await BasketItemModel.findOne({ where: { id: req.params.id, BasketId: user?.bid ?? -1 } })
+      if (item == null) {
+        res.status(403).json({ status: 'error', message: 'Malicious activity detected' })
+        return
+      }
+      res.json({ status: 'success', data: item })
+    } catch (error) {
+      next(error)
+    }
+  }
+}
+
+export function deleteBasketItemById () {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = security.authenticatedUsers.from(req)
+      const item = await BasketItemModel.findOne({ where: { id: req.params.id, BasketId: user?.bid ?? -1 } })
+      if (item == null) {
+        res.status(403).json({ status: 'error', message: 'Malicious activity detected' })
+        return
+      }
+      await item.destroy()
+      res.json({ status: 'success', data: {} })
+    } catch (error) {
+      next(error)
     }
   }
 }
@@ -68,6 +122,12 @@ export function quantityCheckBeforeBasketItemUpdate () {
       const item = await BasketItemModel.findOne({ where: { id: req.params.id } })
       const user = security.authenticatedUsers.from(req)
       challengeUtils.solveIf(challenges.basketManipulateChallenge, () => { return user && req.body.BasketId && user.bid != req.body.BasketId }) // eslint-disable-line eqeqeq
+      // An item that already belongs to a basket must only be modified by that basket's
+      // owner. Items with no basket yet (BasketId null) have no owner to check against.
+      if (item != null && item.BasketId != null && (!user || Number(user.bid) !== Number(item.BasketId))) {
+        res.status(403).json({ status: 'error', message: 'Malicious activity detected' })
+        return
+      }
       if (req.body.quantity) {
         if (item == null) {
           throw new Error('No such item found!')

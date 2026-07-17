@@ -8,15 +8,27 @@ import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
 import { createTestApp } from './helpers/setup'
-import * as security from '../../lib/insecurity'
+import { login } from './helpers/auth'
 
 let app: Express
-const authHeader = { Authorization: 'Bearer ' + security.authorize(), 'content-type': 'application/json' }
+let authHeader: { Authorization: string, 'content-type': string }
 
-before(async () => {
-  const result = await createTestApp()
-  app = result.app
-}, { timeout: 60000 })
+before(
+  async () => {
+    const result = await createTestApp()
+    app = result.app
+
+    const { token } = await login(app, {
+      email: 'jim@juice-sh.op',
+      password: 'ncc-1701'
+    })
+    authHeader = {
+      Authorization: 'Bearer ' + token,
+      'content-type': 'application/json'
+    }
+  },
+  { timeout: 60000 }
+)
 
 void describe('/api/Recycles', () => {
   void it('POST new recycle', async () => {
@@ -34,6 +46,36 @@ void describe('/api/Recycles', () => {
     assert.equal(typeof res.body.data.id, 'number')
     assert.equal(typeof res.body.data.createdAt, 'string')
     assert.equal(typeof res.body.data.updatedAt, 'string')
+  })
+
+  void it('POST new recycle ignores a client-supplied UserId and attributes it to the caller', async () => {
+    const baseline = await request(app)
+      .post('/api/Recycles')
+      .set(authHeader)
+      .send({
+        quantity: 1,
+        AddressId: '1',
+        isPickup: true,
+        date: '2017-05-31'
+      })
+    assert.equal(baseline.status, 201)
+    const ownUserId = baseline.body.data.UserId
+    assert.equal(typeof ownUserId, 'number')
+
+    const forgedUserId = ownUserId + 1000
+    const res = await request(app)
+      .post('/api/Recycles')
+      .set(authHeader)
+      .send({
+        UserId: forgedUserId,
+        quantity: 1,
+        AddressId: '1',
+        isPickup: true,
+        date: '2017-05-31'
+      })
+    assert.equal(res.status, 201)
+    assert.equal(res.body.data.UserId, ownUserId)
+    assert.notEqual(res.body.data.UserId, forgedUserId)
   })
 
   void it('Will prevent GET all recycles from this endpoint', async () => {
