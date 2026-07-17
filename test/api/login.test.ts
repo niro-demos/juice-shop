@@ -43,6 +43,29 @@ void describe('/rest/user/login', () => {
     assert.equal(typeof res.body.authentication.bid, 'number')
   })
 
+  void it('POST login succeeds when the email is typed with different letter case than at registration', async () => {
+    await request(app)
+      .post('/api/Users')
+      .set({ 'content-type': 'application/json' })
+      .send({
+        email: 'CaseLogin@kasper.le',
+        password: 'kallliiii'
+      })
+      .expect(201)
+
+    const res = await request(app)
+      .post('/rest/user/login')
+      .set({ 'content-type': 'application/json' })
+      .send({
+        email: 'caselogin@kasper.le',
+        password: 'kallliiii'
+      })
+
+    assert.equal(res.status, 200)
+    assert.ok(res.headers['content-type']?.includes('application/json'))
+    assert.equal(typeof res.body.authentication.token, 'string')
+  })
+
   void it('POST login non-existing user', async () => {
     const res = await request(app)
       .post('/rest/user/login')

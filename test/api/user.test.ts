@@ -112,6 +112,29 @@ void describe('/api/Users', () => {
     assert.ok(res.headers['content-type']?.includes('application/json'))
   })
 
+  void it('POST registration is rejected when the email differs from an existing account only by letter case', async () => {
+    await request(app)
+      .post('/api/Users')
+      .set(jsonHeader)
+      .send({
+        email: 'case-duplicate@test.test',
+        password: 'somePassword1'
+      })
+      .expect(201)
+
+    const res = await request(app)
+      .post('/api/Users')
+      .set(jsonHeader)
+      .send({
+        email: 'Case-Duplicate@Test.Test',
+        password: 'someOtherPassword1'
+      })
+
+    assert.equal(res.status, 400)
+    assert.ok(res.headers['content-type']?.includes('application/json'))
+    assert.ok(JSON.stringify(res.body).toLowerCase().includes('unique'), `expected a uniqueness validation error, got: ${JSON.stringify(res.body)}`)
+  })
+
   void it('POST whitespaces user', async () => {
     const res = await request(app)
       .post('/api/Users')

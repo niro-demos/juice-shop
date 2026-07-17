@@ -121,7 +121,21 @@ const UserModelInit = (sequelize: Sequelize) => { // vuln-code-snippet start wea
     {
       tableName: 'Users',
       paranoid: true,
-      sequelize
+      sequelize,
+      indexes: [
+        {
+          // Email addresses are conventionally case-insensitive, so
+          // 'admin@juice-sh.op' and 'AdMin@juice-sh.op' must not be usable
+          // for two different accounts. The plain `unique: true` on the
+          // column above only backs a case-SENSITIVE SQL UNIQUE index, so a
+          // case-insensitive index is added here as the actual uniqueness
+          // guard; the DB enforces it atomically as part of the INSERT
+          // itself, with no extra pre-check query needed.
+          unique: true,
+          fields: [sequelize.literal('email COLLATE NOCASE')],
+          name: 'users_email_case_insensitive_unique'
+        }
+      ]
     }
   )
 
