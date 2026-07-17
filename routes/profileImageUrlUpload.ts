@@ -12,6 +12,7 @@ import * as security from '../lib/insecurity'
 import { UserModel } from '../models/user'
 import * as utils from '../lib/utils'
 import logger from '../lib/logger'
+import { BlockedDestinationError, fetchValidatedUrl } from '../lib/ssrfGuard'
 
 export function profileImageUrlUpload () {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -21,7 +22,7 @@ export function profileImageUrlUpload () {
       const loggedInUser = security.authenticatedUsers.get(req.cookies.token)
       if (loggedInUser) {
         try {
-          const response = await fetch(url)
+          const response = await fetchValidatedUrl(url)
           if (!response.ok || !response.body) {
             throw new Error('url returned a non-OK status code or an empty body')
           }
@@ -31,6 +32,10 @@ export function profileImageUrlUpload () {
           const user = await UserModel.findByPk(loggedInUser.data.id)
           await user?.update({ profileImage: `/assets/public/images/uploads/${loggedInUser.data.id}.${ext}` })
         } catch (error) {
+          if (error instanceof BlockedDestinationError) {
+            res.status(400).json({ error: `Invalid image URL: ${utils.getErrorMessage(error)}` })
+            return
+          }
           try {
             const user = await UserModel.findByPk(loggedInUser.data.id)
             await user?.update({ profileImage: url })

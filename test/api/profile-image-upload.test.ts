@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { describe, it, before, after } from 'node:test'
+import { describe, it, before, beforeEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
@@ -149,9 +149,17 @@ void describe('/profile/image/url', () => {
   })
 })
 
-void describe('/profile/image/url (with local mock server)', () => {
-  let mockServer: http.Server
-  let mockPort: number
+// These tests exercise the profile-image-by-URL happy/error paths (extension
+// detection, non-OK / empty-body fallback) without hitting the real network.
+// A real HTTP server can no longer stand in for the "remote" host here: since
+// the SSRF fix (see the "(SSRF protection)" suite below) now blocks outbound
+// fetches to loopback/private destinations, a mock server bound to
+// 127.0.0.1/localhost would itself be rejected. Instead we point at a
+// non-blocked, non-routable documentation address (RFC 5737 TEST-NET-3) and
+// stub the global fetch so no real network call is made or needed.
+void describe('/profile/image/url (with stubbed remote host)', () => {
+  const MOCK_HOST = '203.0.113.10'
+  let originalFetch: typeof fetch
   let token: string
   let userId: number
 
@@ -165,34 +173,30 @@ void describe('/profile/image/url (with local mock server)', () => {
 
     const imageBuffer = fs.readFileSync(path.resolve(__dirname, '../files/validProfileImage.jpg'))
 
-    mockServer = http.createServer((req, res) => {
-      if (req.url?.includes('non-ok')) {
-        res.statusCode = 404
-        res.end()
-      } else if (req.url?.includes('no-body')) {
-        res.statusCode = 204
-        res.end()
-      } else {
-        res.statusCode = 200
-        res.setHeader('Content-Type', 'image/jpeg')
-        res.end(imageBuffer)
+    originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      const requestUrl = typeof input === 'string' ? input : input.toString()
+      const { pathname } = new URL(requestUrl)
+      if (pathname.includes('non-ok')) {
+        return new Response(null, { status: 404 })
       }
-    })
-    await new Promise<void>((resolve) => { mockServer.listen(0, resolve) })
-    mockPort = (mockServer.address() as AddressInfo).port
+      if (pathname.includes('no-body')) {
+        return new Response(null, { status: 204 })
+      }
+      const contentType = pathname.endsWith('.png') ? 'image/png' : 'image/jpeg'
+      return new Response(imageBuffer, { status: 200, headers: { 'Content-Type': contentType } })
+    }) as typeof fetch
   })
 
-  after(async () => {
-    await new Promise<void>((resolve, reject) => {
-      mockServer.close((err) => { err != null ? reject(err) : resolve() })
-    })
+  after(() => {
+    globalThis.fetch = originalFetch
   })
 
   void it('POST with non-OK response falls back to storing URL as profile image', async () => {
     const res = await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
-      .field('imageUrl', `http://localhost:${mockPort}/non-ok.jpg`)
+      .field('imageUrl', `http://${MOCK_HOST}/non-ok.jpg`)
       .redirects(0)
 
     assert.equal(res.status, 302)
@@ -202,7 +206,7 @@ void describe('/profile/image/url (with local mock server)', () => {
     const res = await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
-      .field('imageUrl', `http://localhost:${mockPort}/no-body.jpg`)
+      .field('imageUrl', `http://${MOCK_HOST}/no-body.jpg`)
       .redirects(0)
 
     assert.equal(res.status, 302)
@@ -212,7 +216,7 @@ void describe('/profile/image/url (with local mock server)', () => {
     const res = await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
-      .field('imageUrl', `http://localhost:${mockPort}/photo.jpg`)
+      .field('imageUrl', `http://${MOCK_HOST}/photo.jpg`)
       .redirects(0)
 
     assert.equal(res.status, 302)
@@ -223,7 +227,7 @@ void describe('/profile/image/url (with local mock server)', () => {
     await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
-      .field('imageUrl', `http://localhost:${mockPort}/photo.png`)
+      .field('imageUrl', `http://${MOCK_HOST}/photo.png`)
       .redirects(0)
 
     assert.ok(
@@ -236,12 +240,84 @@ void describe('/profile/image/url (with local mock server)', () => {
     await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
-      .field('imageUrl', `http://localhost:${mockPort}/photo.bmp`)
+      .field('imageUrl', `http://${MOCK_HOST}/photo.bmp`)
       .redirects(0)
 
     assert.ok(
       fs.existsSync(`frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg`),
       `Expected file frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg to exist`
     )
+  })
+})
+
+// Regression coverage for TC-10B885E3 (SSRF): the profile-image-by-URL
+// endpoint must not let an authenticated caller force the server to fetch an
+// arbitrary destination of their choosing. A real local HTTP server is used
+// here (not stubbed) so these tests prove the actual destination-validation
+// code path rejects the request before any outbound fetch is attempted.
+void describe('/profile/image/url (SSRF protection)', () => {
+  let markerServer: http.Server
+  let markerPort: number
+  let markerHits: number
+  let token: string
+
+  before(async () => {
+    const { token: userToken } = await login(app, {
+      email: `jim@${config.get<string>('application.domain')}`,
+      password: 'ncc-1701'
+    })
+    token = userToken
+
+    markerHits = 0
+    markerServer = http.createServer((req, res) => {
+      markerHits++
+      res.statusCode = 200
+      res.setHeader('Content-Type', 'image/png')
+      res.end('SSRF-MARKER')
+    })
+    await new Promise<void>((resolve) => { markerServer.listen(0, '127.0.0.1', resolve) })
+    markerPort = (markerServer.address() as AddressInfo).port
+  })
+
+  beforeEach(() => {
+    markerHits = 0
+  })
+
+  after(async () => {
+    await new Promise<void>((resolve, reject) => {
+      markerServer.close((err) => { err != null ? reject(err) : resolve() })
+    })
+  })
+
+  void it('POST with a loopback IP destination is rejected and never fetched', async () => {
+    const res = await request(app)
+      .post('/profile/image/url')
+      .set('Cookie', `token=${token}`)
+      .field('imageUrl', `http://127.0.0.1:${markerPort}/marker.png`)
+      .redirects(0)
+
+    assert.equal(res.status, 400)
+    assert.equal(markerHits, 0, 'server must not have made an outbound request to the loopback destination')
+  })
+
+  void it('POST with a "localhost" hostname destination is rejected and never fetched', async () => {
+    const res = await request(app)
+      .post('/profile/image/url')
+      .set('Cookie', `token=${token}`)
+      .field('imageUrl', `http://localhost:${markerPort}/marker.png`)
+      .redirects(0)
+
+    assert.equal(res.status, 400)
+    assert.equal(markerHits, 0, 'server must not have made an outbound request to the loopback destination')
+  })
+
+  void it('POST with a non-http(s) scheme is rejected', async () => {
+    const res = await request(app)
+      .post('/profile/image/url')
+      .set('Cookie', `token=${token}`)
+      .field('imageUrl', 'file:///etc/passwd')
+      .redirects(0)
+
+    assert.equal(res.status, 400)
   })
 })
