@@ -13,8 +13,8 @@ import { createTestApp } from './helpers/setup'
 // limiter has a chance to trip.
 const BURST = 105
 
-void describe('/rest/user/login brute-force throttling', () => {
-  void it('throttles rapid repeated wrong-password attempts against the same account', async () => {
+void describe('/rest/user/login brute-force throttling', { timeout: 60000 }, () => {
+  void it('throttles rapid repeated wrong-password attempts against the same account', { timeout: 60000 }, async () => {
     const { app } = await createTestApp()
 
     const email = `throttle-login-${Date.now()}@test.rest`
@@ -48,11 +48,11 @@ void describe('/rest/user/login brute-force throttling', () => {
       `expected the login endpoint to throttle with a 429 at some point during ${BURST} rapid wrong-password attempts, ` +
       `but every response was one of: ${JSON.stringify([...new Set(statuses)])}`
     )
-  }, { timeout: 60000 })
-}, { timeout: 60000 })
+  })
+})
 
 void describe('/rest/user/reset-password brute-force throttling', () => {
-  void it('throttles rapid repeated wrong-answer attempts from a consistent client (baseline)', async () => {
+  void it('throttles rapid repeated wrong-answer attempts from a consistent client (baseline)', { timeout: 60000 }, async () => {
     const { app } = await createTestApp()
     const email = `throttle-reset-baseline-${Date.now()}@juice-sh.op`
 
@@ -71,9 +71,9 @@ void describe('/rest/user/reset-password brute-force throttling', () => {
       `but every response was one of: ${JSON.stringify([...new Set(statuses)])}. The limiter itself appears broken, ` +
       'independent of any header-spoofing bypass.'
     )
-  }, { timeout: 60000 })
+  })
 
-  void it('is not bypassed by sending a distinct spoofed X-Forwarded-For header per request', async () => {
+  void it('is not bypassed by sending a distinct spoofed X-Forwarded-For header per request', { timeout: 60000 }, async () => {
     const { app } = await createTestApp()
     const email = `throttle-reset-attack-${Date.now()}@juice-sh.op`
 
@@ -95,5 +95,5 @@ void describe('/rest/user/reset-password brute-force throttling', () => {
       `carried a distinct spoofed X-Forwarded-For header, but every response was one of: ${JSON.stringify([...new Set(statuses)])}. ` +
       'This means an attacker can claim a different source IP on every request to bypass the throttle entirely.'
     )
-  }, { timeout: 60000 })
+  })
 })
