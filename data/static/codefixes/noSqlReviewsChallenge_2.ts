@@ -6,6 +6,10 @@ export function updateProductReviews () {
       { $set: { message: req.body.message } }
     ).then(
       (result: { modified: number, original: Array<{ author: any }> }) => {
+        if (result.modified === 0) {
+          res.status(404).json({ error: 'Not found' })
+          return
+        }
         res.json(result)
       }, (err: unknown) => {
         res.status(500).json(err)
