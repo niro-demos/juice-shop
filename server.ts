@@ -271,6 +271,14 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
   app.use('/.well-known', serveIndexMiddleware, serveIndex('.well-known', { icons: true, view: 'details' }))
   app.use('/.well-known', express.static('.well-known'))
 
+  /* Publish only the RS256 verification public key -- intentionally public so
+   * clients can verify session tokens client-side. No directory listing and
+   * no other filename is servable from encryptionkeys/ (that was the
+   * unauthenticated-disclosure bug fixed for premium.key). */
+  app.get('/encryptionkeys/jwt.pub', (req: Request, res: Response) => {
+    res.sendFile(path.resolve('encryptionkeys/jwt.pub'))
+  })
+
   /* Swagger documentation for B2B v2 endpoints */
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument))
 
