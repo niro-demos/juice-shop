@@ -89,7 +89,7 @@ void describe('/profile/image/file', () => {
 })
 
 void describe('/profile/image/url', () => {
-  void it('POST profile image URL valid for image available online', async () => {
+  void it('POST profile image URL rejects remote image URL', async () => {
     const { token } = await login(app, {
       email: `jim@${config.get<string>('application.domain')}`,
       password: 'ncc-1701'
@@ -101,10 +101,10 @@ void describe('/profile/image/url', () => {
       .field('imageUrl', 'cataas.com/cat')
       .redirects(0)
 
-    assert.equal(res.status, 302)
+    assert.equal(res.status, 400)
   })
 
-  void it('POST profile image URL redirects even for invalid image URL', async () => {
+  void it('POST profile image URL rejects invalid image URL', async () => {
     const { token } = await login(app, {
       email: `jim@${config.get<string>('application.domain')}`,
       password: 'ncc-1701'
@@ -116,7 +116,7 @@ void describe('/profile/image/url', () => {
       .field('imageUrl', 'https://notanimage.here/100/100')
       .redirects(0)
 
-    assert.equal(res.status, 302)
+    assert.equal(res.status, 400)
   })
 
   void it('POST profile image URL forbidden for anonymous user', { skip: 'FIXME runs into "socket hang up"' }, async () => {
@@ -166,7 +166,11 @@ void describe('/profile/image/url (with local mock server)', () => {
     const imageBuffer = fs.readFileSync(path.resolve(__dirname, '../files/validProfileImage.jpg'))
 
     mockServer = http.createServer((req, res) => {
-      if (req.url?.includes('non-ok')) {
+      if (req.url?.includes('sentinel')) {
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'image/jpeg')
+        res.end('profile-image-url-import-sentinel')
+      } else if (req.url?.includes('non-ok')) {
         res.statusCode = 404
         res.end()
       } else if (req.url?.includes('no-body')) {
@@ -188,60 +192,75 @@ void describe('/profile/image/url (with local mock server)', () => {
     })
   })
 
-  void it('POST with non-OK response falls back to storing URL as profile image', async () => {
+  void it('POST rejects server-side URL imports and does not publish fetched content', async () => {
+    const uploadPath = `frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg`
+    fs.rmSync(uploadPath, { force: true })
+
+    const res = await request(app)
+      .post('/profile/image/url')
+      .set('Cookie', `token=${token}`)
+      .field('imageUrl', `http://localhost:${mockPort}/sentinel.jpg`)
+      .redirects(0)
+
+    assert.ok([400, 403].includes(res.status), `Expected status 400 or 403 but got ${res.status}`)
+    assert.equal(fs.existsSync(uploadPath), false)
+  })
+
+  void it('POST with non-OK response rejects URL import', async () => {
     const res = await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
       .field('imageUrl', `http://localhost:${mockPort}/non-ok.jpg`)
       .redirects(0)
 
-    assert.equal(res.status, 302)
+    assert.equal(res.status, 400)
   })
 
-  void it('POST with empty-body response (204) falls back to storing URL as profile image', async () => {
+  void it('POST with empty-body response (204) rejects URL import', async () => {
     const res = await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
       .field('imageUrl', `http://localhost:${mockPort}/no-body.jpg`)
       .redirects(0)
 
-    assert.equal(res.status, 302)
+    assert.equal(res.status, 400)
   })
 
-  void it('POST with valid response writes file and redirects to profile', async () => {
+  void it('POST with valid response rejects URL import', async () => {
     const res = await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
       .field('imageUrl', `http://localhost:${mockPort}/photo.jpg`)
       .redirects(0)
 
-    assert.equal(res.status, 302)
-    assert.ok(res.headers.location?.endsWith('/profile'))
+    assert.equal(res.status, 400)
   })
 
-  void it('POST with PNG URL extension saves file using PNG extension', async () => {
-    await request(app)
+  void it('POST with PNG URL extension rejects URL import without writing PNG file', async () => {
+    const uploadPath = `frontend/dist/frontend/assets/public/images/uploads/${userId}.png`
+    fs.rmSync(uploadPath, { force: true })
+
+    const res = await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
       .field('imageUrl', `http://localhost:${mockPort}/photo.png`)
       .redirects(0)
 
-    assert.ok(
-      fs.existsSync(`frontend/dist/frontend/assets/public/images/uploads/${userId}.png`),
-      `Expected file frontend/dist/frontend/assets/public/images/uploads/${userId}.png to exist`
-    )
+    assert.equal(res.status, 400)
+    assert.equal(fs.existsSync(uploadPath), false)
   })
 
-  void it('POST with unrecognised URL extension defaults to JPG extension', async () => {
-    await request(app)
+  void it('POST with unrecognised URL extension rejects URL import without writing JPG file', async () => {
+    const uploadPath = `frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg`
+    fs.rmSync(uploadPath, { force: true })
+
+    const res = await request(app)
       .post('/profile/image/url')
       .set('Cookie', `token=${token}`)
       .field('imageUrl', `http://localhost:${mockPort}/photo.bmp`)
       .redirects(0)
 
-    assert.ok(
-      fs.existsSync(`frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg`),
-      `Expected file frontend/dist/frontend/assets/public/images/uploads/${userId}.jpg to exist`
-    )
+    assert.equal(res.status, 400)
+    assert.equal(fs.existsSync(uploadPath), false)
   })
 })
