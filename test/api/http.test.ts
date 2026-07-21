@@ -51,6 +51,8 @@ void describe('HTTP', () => {
   void it('unexpected path under known sub-path caught by generic error handler', async () => {
     const res = await request(app).get('/rest/x')
     assert.equal(res.status, 500)
-    assert.ok(res.text.includes('<title>Error: Unexpected path: /rest/x</title>'))
+    assert.ok(res.text.includes('Unexpected path: /rest/x'))
+    assert.equal(res.text.includes('OWASP Juice Shop (Express'), false)
+    assert.equal(res.text.includes('<pre>'), false)
   })
 })

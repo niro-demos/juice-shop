@@ -29,8 +29,9 @@ void describe('/profile', () => {
 
     assert.equal(res.status, 500)
     assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`<h1>${config.get<string>('application.name')} (Express`))
     assert.ok(res.text.includes('Error: Blocked illegal activity'))
+    assert.equal(res.text.includes(`${config.get<string>('application.name')} (Express`), false)
+    assert.equal(res.text.includes('<pre>'), false)
   })
 
   void it('GET user profile of authenticated user', async () => {

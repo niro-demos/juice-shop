@@ -17,13 +17,13 @@ export function profileImageFileUpload () {
     const file = req.file
     const buffer = file?.buffer
     if (buffer === undefined) {
-      res.status(500)
+      res.status(415)
       next(new Error('Illegal file type'))
       return
     }
     const uploadedFileType = await fileType.fromBuffer(buffer)
     if (uploadedFileType === undefined) {
-      res.status(500)
+      res.status(415)
       next(new Error('Illegal file type'))
       return
     }
