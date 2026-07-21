@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: MIT
  */
 import express, { type NextFunction, type Request, type Response } from 'express'
-import path from 'node:path'
 import config from 'config'
 import { themes } from '../views/themes/themes'
 import * as utils from '../lib/utils'
@@ -12,8 +11,6 @@ import { AllHtmlEntities as Entities } from 'html-entities'
 import { SecurityQuestionModel } from '../models/securityQuestion'
 import { PrivacyRequestModel } from '../models/privacyRequests'
 import { SecurityAnswerModel } from '../models/securityAnswer'
-import * as challengeUtils from '../lib/challengeUtils'
-import { challenges } from '../data/datacache'
 import * as security from '../lib/insecurity'
 import { UserModel } from '../models/user'
 
@@ -50,6 +47,7 @@ router.get('/', (req: Request, res: Response, next: NextFunction) => {
       res.render('dataErasureForm', {
         userEmail: email,
         securityQuestion: question.question,
+        csrfToken: security.hmac(req.cookies.token),
         _title_: entities.encode(config.get<string>('application.name')),
         _favicon_: utils.extractFilename(config.get('application.favicon')),
         _bgColor_: theme.bgColor,
@@ -69,6 +67,7 @@ interface DataErasureRequestParams {
   layout?: string
   email: string
   securityAnswer: string
+  csrfToken?: string
 }
 
 router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>, DataErasureRequestParams>, res: Response, next: NextFunction): void => {
@@ -80,6 +79,18 @@ router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>,
     }
 
     try {
+      const answer = await SecurityAnswerModel.findOne({ where: { UserId: loggedInUser.data.id } })
+      const expectedCsrfToken = security.hmac(req.cookies.token)
+      const validConfirmation = req.body.email === loggedInUser.data.email &&
+        answer != null &&
+        security.hmac(req.body.securityAnswer) === answer.answer &&
+        req.body.csrfToken === expectedCsrfToken
+
+      if (!validConfirmation) {
+        res.status(403).send('Invalid data erasure confirmation.')
+        return
+      }
+
       await PrivacyRequestModel.create({
         UserId: loggedInUser.data.id,
         deletionRequested: true
@@ -100,31 +111,7 @@ router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>,
         _logo_: utils.extractFilename(config.get('application.logo'))
       }
 
-      if (req.body.layout) {
-        const filePath: string = path.resolve(req.body.layout).toLowerCase()
-        const isForbiddenFile: boolean = (filePath.includes('ftp') || filePath.includes('ctf.key') || filePath.includes('encryptionkeys'))
-        if (!isForbiddenFile) {
-          res.render('dataErasureResult', {
-            ...req.body,
-            ...themeVars
-          }, (error, html) => {
-            if (!html || error) {
-              next(new Error(error.message))
-            } else {
-              const sendlfrResponse: string = html.slice(0, 100) + '......'
-              res.send(sendlfrResponse)
-              challengeUtils.solveIf(challenges.lfrChallenge, () => { return true })
-            }
-          })
-        } else {
-          next(new Error('File access not allowed'))
-        }
-      } else {
-        res.render('dataErasureResult', {
-          ...req.body,
-          ...themeVars
-        })
-      }
+      res.render('dataErasureResult', themeVars)
     } catch (error) {
       next(error)
     }
