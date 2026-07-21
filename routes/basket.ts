@@ -22,6 +22,11 @@ export function retrieveBasket () {
         const user = security.authenticatedUsers.from(req)
         return user && id && id !== 'undefined' && id !== 'null' && id !== 'NaN' && user.bid && user?.bid != parseInt(id, 10) // eslint-disable-line eqeqeq
       })
+      const user = security.authenticatedUsers.from(req)
+      if (basket != null && Number(basket.UserId) !== Number(user?.data?.id)) {
+        res.status(403).json({ error: 'Forbidden' })
+        return
+      }
       if (((basket?.Products) != null) && basket.Products.length > 0) {
         for (let i = 0; i < basket.Products.length; i++) {
           basket.Products[i].name = req.__(basket.Products[i].name)
