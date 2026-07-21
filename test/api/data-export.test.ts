@@ -21,6 +21,21 @@ before(async () => {
   app = result.app
 }, { timeout: 60000 })
 
+async function createPaymentCard (authHeader: { Authorization: string, 'content-type': string }) {
+  const cardRes = await request(app)
+    .post('/api/Cards')
+    .set(authHeader)
+    .send({
+      fullName: 'Data Export',
+      cardNum: 4111111111111111,
+      expMonth: 12,
+      expYear: 2088
+    })
+
+  assert.equal(cardRes.status, 201)
+  return cardRes.body.data.id
+}
+
 void describe('/rest/user/data-export', () => {
   void it('Export data without authentication is rejected', async () => {
     const res = await request(app)
@@ -133,10 +148,12 @@ void describe('/rest/user/data-export', () => {
   void it('Export data including orders without use of CAPTCHA', async () => {
     const { token } = await login(app, { email: 'amy@' + config.get<string>('application.domain'), password: 'K1f.....................' })
     const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+    const cardId = await createPaymentCard(authHeader)
 
     await request(app)
       .post('/rest/basket/4/checkout')
       .set(authHeader)
+      .send({ orderDetails: { paymentId: cardId } })
 
     const res = await request(app)
       .post('/rest/user/data-export')
@@ -215,10 +232,12 @@ void describe('/rest/user/data-export', () => {
   void it('Export data including orders with use of CAPTCHA', async () => {
     const { token } = await login(app, { email: 'amy@' + config.get<string>('application.domain'), password: 'K1f.....................' })
     const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+    const cardId = await createPaymentCard(authHeader)
 
     await request(app)
       .post('/rest/basket/4/checkout')
       .set(authHeader)
+      .send({ orderDetails: { paymentId: cardId } })
 
     const captchaRes = await request(app)
       .get('/rest/image-captcha')

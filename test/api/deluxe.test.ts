@@ -9,7 +9,7 @@ import request from 'supertest'
 import type { Express } from 'express'
 import config from 'config'
 import { createTestApp } from './helpers/setup'
-import { login } from './helpers/auth'
+import { login, register } from './helpers/auth'
 
 let app: Express
 
@@ -138,6 +138,28 @@ void describe('/rest/deluxe-membership', () => {
 
     assert.equal(res.status, 400)
     assert.equal(res.body.error, 'Insuffienct funds in Wallet')
+  })
+
+  void it('POST deluxe membership rejects upgrades without payment details', async () => {
+    const email = `tc-577b9b99-${Date.now()}@${config.get<string>('application.domain')}`
+    const password = 'TC-577B9B99-test-pass-1!'
+    await register(app, { email, password })
+    const { token } = await login(app, { email, password })
+    const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+
+    const res = await request(app)
+      .post('/rest/deluxe-membership')
+      .set(authHeader)
+      .send({})
+
+    assert.equal(res.status, 400)
+
+    const statusRes = await request(app)
+      .get('/rest/deluxe-membership')
+      .set(authHeader)
+
+    assert.equal(statusRes.status, 200)
+    assert.equal(statusRes.body.data.membershipCost, 49)
   })
 
   void it('POST deluxe membership status with wrong card id throws error', async () => {

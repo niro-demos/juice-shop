@@ -34,10 +34,9 @@ void describe('insecurity', () => {
   })
 
   void describe('generateCoupon', () => {
-    void it('returns base85-encoded month, year and discount as coupon code', () => {
+    void it('returns a signed month, year and discount as coupon code', () => {
       const coupon = security.generateCoupon(20, new Date('1980-01-02'))
-      assert.equal(coupon, 'n<MiifFb4l')
-      assert.equal(z85.decode(coupon).toString(), 'JAN80-20')
+      assert.match(coupon, /^JAN80-20-[0-9a-f]{16}$/)
     })
 
     void it('uses current month and year if not specified', () => {
@@ -65,6 +64,8 @@ void describe('insecurity', () => {
     })
 
     void it('returns undefined for coupon code not according to expected pattern', () => {
+      assert.equal(security.discountFromCoupon('JAN80-20'), undefined)
+      assert.equal(security.discountFromCoupon('JAN80-20-0000000000000000'), undefined)
       assert.equal(security.discountFromCoupon(z85.encode('Test')), undefined)
       assert.equal(security.discountFromCoupon(z85.encode('XXX00-10')), undefined)
       assert.equal(security.discountFromCoupon(z85.encode('DEC18-999')), undefined)
