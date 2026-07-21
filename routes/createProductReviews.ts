@@ -14,6 +14,10 @@ import * as utils from '../lib/utils'
 export function createProductReviews () {
   return async (req: Request, res: Response) => {
     const user = security.authenticatedUsers.from(req)
+    if (!user?.data?.email) {
+      return res.sendStatus(401)
+    }
+
     challengeUtils.solveIf(
       challenges.forgedReviewChallenge,
       () => user?.data?.email !== req.body.author
@@ -23,7 +27,7 @@ export function createProductReviews () {
       await reviewsCollection.insert({
         product: req.params.id,
         message: req.body.message,
-        author: req.body.author,
+        author: user.data.email,
         likesCount: 0,
         likedBy: []
       })
