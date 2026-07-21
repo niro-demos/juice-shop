@@ -14,7 +14,7 @@ import * as security from '../lib/insecurity'
 import { UserModel } from '../models/user'
 
 export function resetPassword () {
-  return async ({ body, connection }: Request, res: Response, next: NextFunction) => {
+  return async ({ body, headers, connection }: Request, res: Response, next: NextFunction) => {
     const email = body.email
     const answer = body.answer
     const newPassword = body.new
@@ -29,6 +29,12 @@ export function resetPassword () {
     }
     if (newPassword !== repeatPassword) {
       res.status(401).send(res.__('New and repeated password do not match.'))
+      return
+    }
+    const token = headers.authorization ? headers.authorization.substr('Bearer='.length) : null
+    const loggedInUser = token ? security.authenticatedUsers.get(token) : null
+    if (!loggedInUser || loggedInUser.data.email !== email) {
+      res.status(401).send(res.__('Password reset requires an authenticated session.'))
       return
     }
     try {

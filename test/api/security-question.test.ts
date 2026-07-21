@@ -71,20 +71,18 @@ void describe('/api/SecurityQuestions/:id', () => {
 })
 
 void describe('/rest/user/security-question', () => {
-  void it('GET security question for an existing user\'s email address', async () => {
+  void it('GET security question does not disclose whether an email address exists', async () => {
     const res = await request(app)
       .get(`/rest/user/security-question?email=jim@${config.get<string>('application.domain')}`)
 
     assert.equal(res.status, 200)
-    assert.equal(res.body.question.question, 'Your eldest siblings middle name?')
-  })
+    assert.deepEqual(res.body, {})
 
-  void it('GET security question returns nothing for an unknown email address', async () => {
-    const res = await request(app)
+    const unknownEmailRes = await request(app)
       .get('/rest/user/security-question?email=horst@unknown-us.er')
 
-    assert.equal(res.status, 200)
-    assert.deepEqual(res.body, {})
+    assert.equal(unknownEmailRes.status, 200)
+    assert.deepEqual(unknownEmailRes.body, {})
   })
 
   void it('GET security question throws error for missing email address', async () => {
