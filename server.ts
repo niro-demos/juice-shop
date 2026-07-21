@@ -508,7 +508,15 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
 
     // create a wallet when a new user is registered using API
     if (name === 'User') { // vuln-code-snippet neutral-line registerAdminChallenge
-      resource.create.send.before((req: Request, res: Response, context: { instance: { id: any }, continue: any }) => { // vuln-code-snippet vuln-line registerAdminChallenge
+      resource.create.write.before((req: Request, res: Response, context: { attributes: { role?: string }, continue: any }) => { // vuln-code-snippet vuln-line registerAdminChallenge
+        if (req.body.role === undefined || ['customer', 'deluxe', 'accounting', 'admin'].includes(req.body.role)) {
+          context.attributes.role = 'customer'
+        } else {
+          context.attributes.role = req.body.role
+        }
+        return context.continue
+      })
+      resource.create.send.before((req: Request, res: Response, context: { instance: { id: any }, continue: any }) => { // vuln-code-snippet neutral-line registerAdminChallenge
         WalletModel.create({ UserId: context.instance.id }).catch((err: unknown) => {
           console.log(err)
         })
