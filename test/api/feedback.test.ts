@@ -9,9 +9,7 @@ import request from 'supertest'
 import type { Express } from 'express'
 import { createTestApp } from './helpers/setup'
 import { login } from './helpers/auth'
-import { challenges } from '../../data/datacache'
 import * as security from '../../lib/insecurity'
-import * as utils from '../../lib/utils'
 
 let app: Express
 const authHeader = { Authorization: 'Bearer ' + security.authorize(), 'content-type': 'application/json' }
@@ -48,26 +46,31 @@ void describe('/api/Feedbacks', () => {
     assert.equal(res.body.data.comment, 'I am a harmless comment.')
   })
 
-  if (utils.isChallengeEnabled(challenges.persistedXssFeedbackChallenge)) {
-    void it('POST fails to sanitize masked XSS-attack by not applying sanitization recursively', async () => {
-      const captchaRes = await request(app)
-        .get('/rest/captcha')
-      assert.equal(captchaRes.status, 200)
-      assert.ok(captchaRes.headers['content-type']?.includes('application/json'))
+  void it('POST does not retain executable iframe markup from masked feedback', async () => {
+    const captchaRes = await request(app)
+      .get('/rest/captcha')
+    assert.equal(captchaRes.status, 200)
+    assert.ok(captchaRes.headers['content-type']?.includes('application/json'))
 
-      const res = await request(app)
-        .post('/api/Feedbacks')
-        .set(jsonHeader)
-        .send({
-          comment: 'The sanitize-html module up to at least version 1.4.2 has this issue: <<script>Foo</script>iframe src="javascript:alert(`xss`)">',
-          rating: 1,
-          captchaId: captchaRes.body.captchaId,
-          captcha: captchaRes.body.answer
-        })
-      assert.equal(res.status, 201)
-      assert.equal(res.body.data.comment, 'The sanitize-html module up to at least version 1.4.2 has this issue: <iframe src="javascript:alert(`xss`)">')
-    })
-  }
+    const res = await request(app)
+      .post('/api/Feedbacks')
+      .set(jsonHeader)
+      .send({
+        comment: 'TC722B35BD-probe <<script>ignored</script>iframe src="javascript:parent.document.title=\'TC722B35BD_EXECUTED\'">',
+        rating: 1,
+        captchaId: captchaRes.body.captchaId,
+        captcha: captchaRes.body.answer
+      })
+    assert.equal(res.status, 201)
+    assert.doesNotMatch(String(res.body.data.comment), /<iframe\b[^>]*\bsrc\s*=\s*["']?javascript:/i)
+
+    const feedbacksRes = await request(app)
+      .get('/api/Feedbacks')
+    assert.equal(feedbacksRes.status, 200)
+    const persisted = feedbacksRes.body.data.find((feedback: { id: number }) => feedback.id === res.body.data.id)
+    assert.ok(persisted)
+    assert.doesNotMatch(String(persisted.comment), /<iframe\b[^>]*\bsrc\s*=\s*["']?javascript:/i)
+  })
 
   void it('POST feedback in another users name as anonymous user', async () => {
     const captchaRes = await request(app)

@@ -68,10 +68,18 @@ describe('LastLoginIpComponent', () => {
         expect(console.log).toHaveBeenCalled()
     })
 
-    it('should set Last-Login IP from JWT as trusted HTML', () => {
+    it('should set Last-Login IP from JWT as text', () => {
         localStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7Imxhc3RMb2dpbklwIjoiMS4yLjMuNCJ9fQ.RAkmdqwNypuOxv3SDjPO4xMKvd1CddKvDFYDBfUt3bg')
         component.ngOnInit()
-        expect(sanitizer.bypassSecurityTrustHtml).toHaveBeenCalledWith('<small>1.2.3.4</small>')
+        expect(sanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalled()
+        expect(component.lastLoginIp).toBe('1.2.3.4')
+    })
+
+    it('should not trust Last-Login IP markup from JWT as HTML', () => {
+        localStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7Imxhc3RMb2dpbklwIjoiPGltZyBzcmM9eCBvbmVycm9yPVwiZG9jdW1lbnQudGl0bGU9J1RDMTgtWFNTJ1wiPiJ9fQ.JZuSNwiRtHSFVgmT1aJH5BbMhaY2Fpw_zIIoVhghR_E')
+        component.ngOnInit()
+        expect(sanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalled()
+        expect(component.lastLoginIp).toBe('<img src=x onerror="document.title=\'TC18-XSS\'">')
     })
 
     it('should not set Last-Login IP if none is present in JWT', () => {
