@@ -258,6 +258,28 @@ void describe('/rest/saveLoginIp', () => {
     assert.equal(res.body.lastLoginIp, '1.2.3.4')
   })
 
+  void it('GET last login IP does not store executable markup from True-Client-IP', async () => {
+    const loginRes = await request(app)
+      .post('/rest/user/login')
+      .set({ 'content-type': 'application/json' })
+      .send({
+        email: 'bjoern.kimminich@gmail.com',
+        password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI='
+      })
+
+    assert.equal(loginRes.status, 200)
+
+    const res = await request(app)
+      .get('/rest/saveLoginIp')
+      .set({
+        Authorization: 'Bearer ' + loginRes.body.authentication.token,
+        'true-client-ip': '<img src=x onerror="document.title=\'TC18-XSS\'">'
+      })
+
+    assert.equal(res.status, 200)
+    assert.doesNotMatch(String(res.body.lastLoginIp), /<img\b[^>]*\bonerror\s*=/i)
+  })
+
   void it('GET last login IP will be saved as remote IP when True-Client-IP is not present', async () => {
     const loginRes = await request(app)
       .post('/rest/user/login')

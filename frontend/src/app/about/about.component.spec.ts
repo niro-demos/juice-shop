@@ -173,14 +173,24 @@ describe('AboutComponent', () => {
 
         component.populateSlideshowFromFeedbacks()
 
-        expect(sanitizer.bypassSecurityTrustHtml).toHaveBeenCalledTimes(1)
-        const sanitizedHtml = sanitizer.bypassSecurityTrustHtml.mock.calls[0][0]
+        expect(sanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalled()
+        const sanitizedHtml = galleryRef.addImage.mock.calls[0][0].args
         expect(sanitizedHtml).toContain('<p class="feedback-comment">Great!</p>')
         expect(sanitizedHtml).toContain('feedback-stars')
         expect((sanitizedHtml.match(/fas fa-star/g) ?? []).length).toBe(3)
         expect((sanitizedHtml.match(/far fa-star/g) ?? []).length).toBe(2)
         expect(galleryRef.addImage).toHaveBeenCalledTimes(1)
         expect(galleryRef.addImage.mock.calls[0][0].src).toBe('assets/public/images/carousel/1.jpg')
+    })
+
+    it('should not trust feedback comments as HTML in the gallery', () => {
+        feedbackService.find.mockReturnValue(of([{ comment: '<iframe src="javascript:parent.document.title=\'TC722B35BD_EXECUTED\'">', rating: 1 }]))
+
+        component.populateSlideshowFromFeedbacks()
+
+        expect(sanitizer.bypassSecurityTrustHtml).not.toHaveBeenCalled()
+        const args = galleryRef.addImage.mock.calls[0][0].args
+        expect(args).toContain('&lt;iframe src=&quot;javascript:parent.document.title=&#39;TC722B35BD_EXECUTED&#39;&quot;&gt;')
     })
 
     it('should cycle through the available carousel images when there are more feedbacks than images', () => {
