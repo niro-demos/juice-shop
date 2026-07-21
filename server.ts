@@ -30,6 +30,7 @@ import { IpFilter } from 'express-ipfilter'
 import securityTxt from 'express-security.txt'
 import { rateLimit } from 'express-rate-limit'
 import { getStream } from 'file-stream-rotator'
+import { AllHtmlEntities as Entities } from 'html-entities'
 import type { Request, Response, NextFunction } from 'express'
 
 import { sequelize, createSequelize, initModels, setSequelize } from './models'
@@ -129,10 +130,7 @@ import { ensureFileIsPassed, handleZipFileUpload, checkUploadSize, checkFileType
 
 const app = express()
 const server = new http.Server(app)
-
-// errorhandler requires us from overwriting a string property on it's module which is a big no-no with esmodules :/
-
-const errorhandler = require('errorhandler')
+const entities = new Entities()
 
 const startTime = Date.now()
 
@@ -158,6 +156,26 @@ const collectDurationPromise = (name: string, func: (...args: any) => Promise<an
       throw err
     }
   }
+}
+
+function handleError (err: unknown, req: Request, res: Response, next: NextFunction) {
+  if (res.headersSent) {
+    next(err)
+    return
+  }
+
+  const errorStatus = typeof (err as { status?: unknown }).status === 'number'
+    ? (err as { status: number }).status
+    : (err as { statusCode?: unknown }).statusCode
+  const statusCode = typeof errorStatus === 'number' && errorStatus >= 400 && errorStatus < 600
+    ? errorStatus
+    : res.statusCode >= 400 && res.statusCode < 600
+      ? res.statusCode
+      : 500
+  const message = utils.getErrorMessage(err)
+  logger.warn(`${req.method} ${req.originalUrl} failed: ${message}`)
+  res.status(statusCode).type('html')
+  res.end(`<!DOCTYPE html><html><head><title>Error</title></head><body><h1>Error</h1><p>Error: ${entities.encode(message)}</p></body></html>`)
 }
 
 /* Sets view engine to hbs */
@@ -679,7 +697,7 @@ function configureApp (app: ReturnType<typeof express>, seq: typeof sequelize) {
 
   /* Error Handling */
   app.use(verify.errorHandlingChallenge())
-  app.use(errorhandler())
+  app.use(handleError)
 }
 
 // Function called first to ensure that all the i18n files are reloaded successfully before other linked operations.
@@ -727,7 +745,6 @@ logger.info(`Entity models ${colors.bold(Object.keys(sequelize.models).length.to
 let metricsUpdateLoop: any
 const Metrics = metrics.observeMetrics() // vuln-code-snippet neutral-line exposedMetricsChallenge
 app.get('/metrics', utils.asyncHandler(metrics.serveMetrics())) // vuln-code-snippet vuln-line exposedMetricsChallenge
-errorhandler.title = `${config.get<string>('application.name')} (Express ${utils.version('express')})`
 
 export async function start (readyCallback?: () => void) {
   const datacreatorEnd = startupGauge.startTimer({ task: 'datacreator' })

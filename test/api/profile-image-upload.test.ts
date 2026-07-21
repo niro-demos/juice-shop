@@ -17,6 +17,14 @@ import { login } from './helpers/auth'
 
 let app: Express
 
+function assertNoInternalErrorDetails (body: string) {
+  assert.equal(body.includes(`${config.get<string>('application.name')} (Express`), false)
+  assert.equal(body.includes('/home/runner/work/juice-shop/juice-shop'), false)
+  assert.equal(body.includes('routes/profileImageFileUpload'), false)
+  assert.equal(body.includes('node:internal/process/task_queues'), false)
+  assert.equal(body.includes('<pre>'), false)
+}
+
 before(async () => {
   const result = await createTestApp()
   app = result.app
@@ -54,9 +62,7 @@ void describe('/profile/image/file', () => {
       .attach('file', file)
 
     assert.equal(res.status, 415)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`${config.get<string>('application.name')} (Express`))
-    assert.ok(res.text.includes('Error: Profile image upload does not accept this file type'))
+    assertNoInternalErrorDetails(res.text)
   })
 
   void it('POST profile image file forbidden for anonymous user', async () => {
@@ -69,6 +75,7 @@ void describe('/profile/image/file', () => {
     assert.equal(res.status, 500)
     assert.ok(res.headers['content-type']?.includes('text/html'))
     assert.ok(res.text.includes('Error: Blocked illegal activity'))
+    assertNoInternalErrorDetails(res.text)
   })
 
   void it('POST profile image file rejected for unrecognizable file content', async () => {
@@ -82,9 +89,20 @@ void describe('/profile/image/file', () => {
       .set('Cookie', `token=${token}`)
       .attach('file', Buffer.from('not an image, just plain text content'), 'random.bin')
 
-    assert.equal(res.status, 500)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes('Error: Illegal file type'))
+    assert.equal(res.status, 415)
+    assertNoInternalErrorDetails(res.text)
+  })
+
+  void it('POST profile image file rejected without internal error details for anonymous malformed upload', async () => {
+    const res = await request(app)
+      .post('/profile/image/file')
+      .attach('file', Buffer.from('notimage'), {
+        filename: 'notimage.bin',
+        contentType: 'application/octet-stream'
+      })
+
+    assert.equal(res.status, 415)
+    assertNoInternalErrorDetails(res.text)
   })
 })
 

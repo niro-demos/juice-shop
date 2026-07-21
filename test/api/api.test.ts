@@ -7,7 +7,6 @@ import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
-import config from 'config'
 import { createTestApp } from './helpers/setup'
 
 let app: Express
@@ -26,11 +25,12 @@ void describe('/api', () => {
 })
 
 void describe('/rest', () => {
-  void it('GET error message with information leakage when calling unrecognized path with /rest in it', async () => {
+  void it('GET error message without internal details when calling unrecognized path with /rest in it', async () => {
     const res = await request(app)
       .get('/rest/unrecognized')
     assert.equal(res.status, 500)
-    assert.ok(res.text.includes('<h1>' + config.get<string>('application.name') + ' (Express'))
     assert.ok(res.text.includes('Unexpected path: /rest/unrecognized'))
+    assert.equal(res.text.includes('OWASP Juice Shop (Express'), false)
+    assert.equal(res.text.includes('<pre>'), false)
   })
 })

@@ -44,8 +44,9 @@ void describe('/rest/products/search', () => {
       .get("/rest/products/search?q=';")
     assert.equal(res.status, 500)
     assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`<h1>${config.get<string>('application.name')} (Express`))
     assert.ok(res.text.includes('SQLITE_ERROR: near &quot;;&quot;: syntax error'))
+    assert.equal(res.text.includes(`${config.get<string>('application.name')} (Express`), false)
+    assert.equal(res.text.includes('<pre>'), false)
   })
 
   void it('GET product search SQL Injection fails from two missing closing parenthesis', async () => {
@@ -53,8 +54,9 @@ void describe('/rest/products/search', () => {
       .get("/rest/products/search?q=' union select id,email,password from users--")
     assert.equal(res.status, 500)
     assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`<h1>${config.get<string>('application.name')} (Express`))
     assert.ok(res.text.includes('SQLITE_ERROR: near &quot;union&quot;: syntax error'))
+    assert.equal(res.text.includes(`${config.get<string>('application.name')} (Express`), false)
+    assert.equal(res.text.includes('<pre>'), false)
   })
 
   void it('GET product search SQL Injection fails from one missing closing parenthesis', async () => {
@@ -62,8 +64,9 @@ void describe('/rest/products/search', () => {
       .get("/rest/products/search?q=') union select id,email,password from users--")
     assert.equal(res.status, 500)
     assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`<h1>${config.get<string>('application.name')} (Express`))
     assert.ok(res.text.includes('SQLITE_ERROR: near &quot;union&quot;: syntax error'))
+    assert.equal(res.text.includes(`${config.get<string>('application.name')} (Express`), false)
+    assert.equal(res.text.includes('<pre>'), false)
   })
 
   void it('GET product search SQL Injection fails for SELECT * FROM attack due to wrong number of returned columns', async () => {
@@ -71,8 +74,9 @@ void describe('/rest/products/search', () => {
       .get("/rest/products/search?q=')) union select * from users--")
     assert.equal(res.status, 500)
     assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes(`<h1>${config.get<string>('application.name')} (Express`))
     assert.ok(res.text.includes('SQLITE_ERROR: SELECTs to the left and right of UNION do not have the same number of result columns'))
+    assert.equal(res.text.includes(`${config.get<string>('application.name')} (Express`), false)
+    assert.equal(res.text.includes('<pre>'), false)
   })
 
   void it('GET product search can create UNION SELECT with Users table and fixed columns', async () => {
