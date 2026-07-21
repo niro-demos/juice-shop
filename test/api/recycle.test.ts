@@ -8,14 +8,33 @@ import assert from 'node:assert/strict'
 import request from 'supertest'
 import type { Express } from 'express'
 import { createTestApp } from './helpers/setup'
-import * as security from '../../lib/insecurity'
+import { login } from './helpers/auth'
 
 let app: Express
-const authHeader = { Authorization: 'Bearer ' + security.authorize(), 'content-type': 'application/json' }
+let authHeader: { Authorization: string, 'content-type': string }
+let addressId: number
 
 before(async () => {
   const result = await createTestApp()
   app = result.app
+  const { token } = await login(app, {
+    email: 'jim@juice-sh.op',
+    password: 'ncc-1701'
+  })
+  authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+  const addressRes = await request(app)
+    .post('/api/Addresss')
+    .set(authHeader)
+    .send({
+      fullName: 'Recycle User',
+      mobileNum: '9800000000',
+      zipCode: 'NX 101',
+      streetAddress: 'Recycle Street',
+      city: 'NYC',
+      state: 'NY',
+      country: 'USA'
+    })
+  addressId = addressRes.body.data.id
 }, { timeout: 60000 })
 
 void describe('/api/Recycles', () => {
@@ -25,7 +44,7 @@ void describe('/api/Recycles', () => {
       .set(authHeader)
       .send({
         quantity: 200,
-        AddressId: '1',
+        AddressId: addressId,
         isPickup: true,
         date: '2017-05-31'
       })
@@ -46,18 +65,20 @@ void describe('/api/Recycles', () => {
 
   void it('Will GET existing recycle from this endpoint', async () => {
     // First create a recycle so we can GET it
-    await request(app)
+    const createRes = await request(app)
       .post('/api/Recycles')
       .set(authHeader)
       .send({
         quantity: 100,
-        AddressId: '1',
+        AddressId: addressId,
         isPickup: false,
         date: '2017-06-01'
       })
+    assert.equal(createRes.status, 201)
 
     const res = await request(app)
-      .get('/api/Recycles/1')
+      .get('/api/Recycles/' + createRes.body.data.id)
+      .set(authHeader)
     assert.equal(res.status, 200)
     assert.ok(res.headers['content-type']?.includes('application/json'))
     const items = res.body.data
