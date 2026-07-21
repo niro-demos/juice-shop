@@ -153,7 +153,7 @@ describe('/#/contact', () => {
 
         async function sendPostRequest (captcha: {
           captchaId: number
-          answer: string
+          captcha: string
         }) {
           const response = await fetch(
             `${Cypress.config('baseUrl')}/api/Feedbacks`,
@@ -165,7 +165,7 @@ describe('/#/contact', () => {
               },
               body: JSON.stringify({
                 captchaId: captcha.captchaId,
-                captcha: `${captcha.answer}`,
+                captcha: solveCaptchaExpression(captcha.captcha),
                 comment: 'Comment',
                 rating: 0
               })
@@ -201,7 +201,7 @@ describe('/#/contact', () => {
 
           async function sendPostRequest (captcha: {
             captchaId: number
-            answer: string
+            captcha: string
           }) {
             await fetch(`${Cypress.config('baseUrl')}/api/Feedbacks`, {
               method: 'POST',
@@ -211,7 +211,7 @@ describe('/#/contact', () => {
               },
               body: JSON.stringify({
                 captchaId: captcha.captchaId,
-                captcha: `${captcha.answer}`,
+                captcha: solveCaptchaExpression(captcha.captcha),
                 comment: `Spam #${i}`,
                 rating: 3
               })
@@ -258,4 +258,9 @@ function solveNextCaptcha () {
       const answer = eval(val).toString()
       cy.get('#captchaControl').type(answer)
     })
+}
+
+function solveCaptchaExpression (expression: string) {
+  // eslint-disable-next-line no-eval
+  return eval(expression).toString()
 }
