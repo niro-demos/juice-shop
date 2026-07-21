@@ -26,6 +26,41 @@ void describe('/rest/memories', () => {
     assert.equal(res.status, 200)
   })
 
+  void it('GET memories via public API does not expose owner account fields', async () => {
+    const sensitiveUserFields = [
+      'email',
+      'password',
+      'role',
+      'deluxeToken',
+      'lastLoginIp',
+      'totpSecret',
+      'isActive',
+      'createdAt',
+      'updatedAt',
+      'deletedAt'
+    ]
+    const res = await request(app)
+      .get('/rest/memories')
+
+    assert.equal(res.status, 200)
+    assert.equal(res.body.status, 'success')
+    assert.ok(Array.isArray(res.body.data))
+    assert.ok(res.body.data.length > 0)
+
+    const usableMemory = res.body.data.find((memory: any) => typeof memory.caption === 'string' && typeof memory.imagePath === 'string')
+    assert.ok(usableMemory)
+
+    for (const memory of res.body.data) {
+      if (!memory.User) {
+        continue
+      }
+
+      for (const field of sensitiveUserFields) {
+        assert.equal(Object.prototype.hasOwnProperty.call(memory.User, field), false)
+      }
+    }
+  })
+
   void it('GET memories via a valid authorization token', async () => {
     const { token } = await login(app, {
       email: 'jim@' + config.get<string>('application.domain'),
