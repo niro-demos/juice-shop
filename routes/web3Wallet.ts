@@ -1,4 +1,5 @@
 import { type Request, type Response } from 'express'
+import { isAddress } from 'ethers'
 
 import logger from '../lib/logger'
 import * as utils from '../lib/utils'
@@ -7,12 +8,17 @@ import * as challengeUtils from '../lib/challengeUtils'
 import { web3WalletABI } from '../data/static/contractABIs'
 
 const web3WalletAddress = '0x413744D59d31AFDC2889aeE602636177805Bd7b0'
-const walletsConnected = new Set()
+const walletsConnected = new Set<string>()
 let isEventListenerCreated = false
 
 export function contractExploitListener () {
   return async (req: Request, res: Response) => {
     const metamaskAddress = req.body.walletAddress
+    if (typeof metamaskAddress !== 'string' || !isAddress(metamaskAddress)) {
+      res.status(400).json({ error: 'Invalid wallet address' })
+      return
+    }
+
     walletsConnected.add(metamaskAddress)
     try {
       if (!isEventListenerCreated) {
