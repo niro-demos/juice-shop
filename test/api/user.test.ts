@@ -30,13 +30,21 @@ void describe('/api/Users', () => {
     assert.equal(res.status, 401)
   })
 
-  void it('GET all users', async () => {
-    const res = await request(app).get('/api/Users').set(authHeader)
+  void it('GET all users is forbidden for a customer', async () => {
+    const customerHeader = { Authorization: `Bearer ${security.authorize({ data: { role: security.roles.customer } })}` }
+    const res = await request(app).get('/api/Users').set(customerHeader)
+    assert.equal(res.status, 403)
+  })
+
+  void it('GET all users as admin', async () => {
+    const adminHeader = { Authorization: `Bearer ${security.authorize({ data: { role: security.roles.admin } })}` }
+    const res = await request(app).get('/api/Users').set(adminHeader)
     assert.equal(res.status, 200)
   })
 
   void it('GET all users doesnt include passwords', async () => {
-    const res = await request(app).get('/api/Users').set(authHeader)
+    const adminHeader = { Authorization: `Bearer ${security.authorize({ data: { role: security.roles.admin } })}` }
+    const res = await request(app).get('/api/Users').set(adminHeader)
     assert.equal(res.status, 200)
     for (const user of res.body.data) {
       assert.equal(user.password, undefined)
