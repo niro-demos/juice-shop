@@ -13,7 +13,7 @@ import { createTestApp } from './helpers/setup'
 import { login } from './helpers/auth'
 
 let app: Express
-const authHeader = { Authorization: `Bearer ${security.authorize({ data: { email: 'admin@juice-sh.op' } })}`, 'content-type': 'application/json' }
+const authHeader = { Authorization: `Bearer ${security.authorize({ data: { email: 'admin@juice-sh.op', role: security.roles.admin } })}`, 'content-type': 'application/json' }
 
 before(async () => {
   const result = await createTestApp()
@@ -21,6 +21,15 @@ before(async () => {
 }, { timeout: 60000 })
 
 void describe('/rest/user/authentication-details', () => {
+  void it('GET all users is forbidden for a customer', async () => {
+    const customerHeader = { Authorization: `Bearer ${security.authorize({ data: { role: security.roles.customer } })}` }
+    const res = await request(app)
+      .get('/rest/user/authentication-details')
+      .set(customerHeader)
+
+    assert.equal(res.status, 403)
+  })
+
   void it('GET all users with password replaced by asterisks', async () => {
     const res = await request(app)
       .get('/rest/user/authentication-details')
