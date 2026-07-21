@@ -89,7 +89,7 @@ void describe('/rest/user/change-password', () => {
     assert.ok(res.text.includes('Error: Blocked illegal activity'))
   })
 
-  void it('GET password change for Bender without current password using GET request', async () => {
+  void it('GET password change rejects requests without current password', async () => {
     const { token } = await login(app, {
       email: 'bender@' + config.get<string>('application.domain'),
       password: 'OhG0dPlease1nsertLiquor!'
@@ -99,26 +99,38 @@ void describe('/rest/user/change-password', () => {
       .get('/rest/user/change-password?new=slurmCl4ssic&repeat=slurmCl4ssic')
       .set({ Authorization: 'Bearer ' + token })
 
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 401)
+    assert.ok(res.text.includes('Current password is required.'))
+
+    await login(app, {
+      email: 'bender@' + config.get<string>('application.domain'),
+      password: 'OhG0dPlease1nsertLiquor!'
+    })
   })
 })
 
 void describe('/rest/user/reset-password', () => {
-  void it('POST password reset for Jim with correct answer to his security question', async () => {
+  void it('POST password reset rejects unauthenticated requests with correct security answers', async () => {
     const res = await request(app)
       .post('/rest/user/reset-password')
       .set({ 'content-type': 'application/json' })
       .send({
         email: 'jim@' + config.get<string>('application.domain'),
         answer: 'Samuel',
-        new: 'ncc-1701',
-        repeat: 'ncc-1701'
+        new: 'NiroTC7425-Unauth-1!',
+        repeat: 'NiroTC7425-Unauth-1!'
       })
 
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 401)
+    assert.ok(res.text.includes('Password reset requires an authenticated session.'))
+
+    await login(app, {
+      email: 'jim@' + config.get<string>('application.domain'),
+      password: 'ncc-1701'
+    })
   })
 
-  void it('POST password reset for Bender with correct answer to his security question', async () => {
+  void it('POST password reset for Bender with correct answer to his security question is rejected without a session', async () => {
     const res = await request(app)
       .post('/rest/user/reset-password')
       .set({ 'content-type': 'application/json' })
@@ -129,10 +141,11 @@ void describe('/rest/user/reset-password', () => {
         repeat: 'OhG0dPlease1nsertLiquor!'
       })
 
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 401)
+    assert.ok(res.text.includes('Password reset requires an authenticated session.'))
   })
 
-  void it('POST password reset for Bjoern\u00b4s internal account with correct answer to his security question', async () => {
+  void it('POST password reset for Bjoern\u00b4s internal account with correct answer to his security question is rejected without a session', async () => {
     const res = await request(app)
       .post('/rest/user/reset-password')
       .set({ 'content-type': 'application/json' })
@@ -143,10 +156,11 @@ void describe('/rest/user/reset-password', () => {
         repeat: 'monkey summer birthday are all bad passwords but work just fine in a long passphrase'
       })
 
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 401)
+    assert.ok(res.text.includes('Password reset requires an authenticated session.'))
   })
 
-  void it('POST password reset for Bjoern\u00b4s OWASP account with correct answer to his security question', async () => {
+  void it('POST password reset for Bjoern\u00b4s OWASP account with correct answer to his security question is rejected without a session', async () => {
     const res = await request(app)
       .post('/rest/user/reset-password')
       .set({ 'content-type': 'application/json' })
@@ -157,10 +171,11 @@ void describe('/rest/user/reset-password', () => {
         repeat: 'kitten lesser pooch karate buffoon indoors'
       })
 
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 401)
+    assert.ok(res.text.includes('Password reset requires an authenticated session.'))
   })
 
-  void it('POST password reset for Morty with correct answer to his security question', async () => {
+  void it('POST password reset for Morty with correct answer to his security question is rejected without a session', async () => {
     const res = await request(app)
       .post('/rest/user/reset-password')
       .set({ 'content-type': 'application/json' })
@@ -171,13 +186,44 @@ void describe('/rest/user/reset-password', () => {
         repeat: 'iBurri3dMySe1fInTheB4ckyard!'
       })
 
+    assert.equal(res.status, 401)
+    assert.ok(res.text.includes('Password reset requires an authenticated session.'))
+  })
+
+  void it('POST password reset with a session and correct answer changes the signed-in user password', async () => {
+    const { token } = await login(app, {
+      email: 'bender@' + config.get<string>('application.domain'),
+      password: 'OhG0dPlease1nsertLiquor!'
+    })
+
+    const res = await request(app)
+      .post('/rest/user/reset-password')
+      .set({
+        Authorization: 'Bearer ' + token,
+        'content-type': 'application/json'
+      })
+      .send({
+        email: 'bender@' + config.get<string>('application.domain'),
+        answer: 'Stop\'n\'Drop',
+        new: 'OhG0dPlease1nsertLiquor!',
+        repeat: 'OhG0dPlease1nsertLiquor!'
+      })
+
     assert.equal(res.status, 200)
   })
 
   void it('POST password reset with wrong answer to security question', async () => {
+    const { token } = await login(app, {
+      email: 'bjoern@' + config.get<string>('application.domain'),
+      password: 'monkey summer birthday are all bad passwords but work just fine in a long passphrase'
+    })
+
     const res = await request(app)
       .post('/rest/user/reset-password')
-      .set({ 'content-type': 'application/json' })
+      .set({
+        Authorization: 'Bearer ' + token,
+        'content-type': 'application/json'
+      })
       .send({
         email: 'bjoern@' + config.get<string>('application.domain'),
         answer: '25436',
