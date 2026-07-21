@@ -16,6 +16,7 @@ import { QuantityModel } from '../models/quantity'
 import { ProductModel } from '../models/product'
 import { BasketModel } from '../models/basket'
 import { WalletModel } from '../models/wallet'
+import { CardModel } from '../models/card'
 import * as security from '../lib/insecurity'
 import * as utils from '../lib/utils'
 import * as db from '../data/mongodb'
@@ -37,6 +38,17 @@ export function placeOrder () {
         if (basket != null) {
           const customer = security.authenticatedUsers.from(req)
           const email = customer ? customer.data ? customer.data.email : '' : ''
+          if (!req.body.orderDetails?.paymentId) {
+            res.status(400).json({ status: 'error', error: 'Invalid payment method' })
+            return
+          }
+          if (req.body.UserId && req.body.orderDetails.paymentId !== 'wallet') {
+            const card = await CardModel.findOne({ where: { id: req.body.orderDetails.paymentId, UserId: req.body.UserId } })
+            if (card == null) {
+              res.status(400).json({ status: 'error', error: 'Invalid payment method' })
+              return
+            }
+          }
           const orderId = security.hash(email).slice(0, 4) + '-' + utils.randomHexString(16)
           const pdfFile = `order_${orderId}.pdf`
           const { default: PDFDocument } = await import('pdfkit')

@@ -11,6 +11,7 @@ import { BasketItemModel } from '../../models/basketitem'
 import { QuantityModel } from '../../models/quantity'
 import { WalletModel } from '../../models/wallet'
 import { DeliveryModel } from '../../models/delivery'
+import { CardModel } from '../../models/card'
 import * as db from '../../data/mongodb'
 import * as security from '../../lib/insecurity'
 
@@ -20,7 +21,7 @@ void describe('order', () => {
   let next: any
 
   beforeEach(() => {
-    req = { params: { id: '1' }, body: {}, headers: {}, __: mock.fn((s) => s), socket: { remoteAddress: '127.0.0.1' } }
+    req = { params: { id: '1' }, body: { orderDetails: { paymentId: 1 } }, headers: {}, __: mock.fn((s) => s), socket: { remoteAddress: '127.0.0.1' } }
     res = { json: mock.fn(), status: mock.fn(() => res) }
     next = mock.fn()
     // Reset mocks that might have been set globally or on models
@@ -145,6 +146,7 @@ void describe('order', () => {
     mock.method(QuantityModel, 'findOne', async () => ({ quantity: 10 }))
     mock.method(QuantityModel, 'update', async () => [1])
     req.body.UserId = 1
+    mock.method(CardModel, 'findOne', async () => ({ id: 1, UserId: 1 }))
     const error = new Error('Wallet increment error')
     mock.method(WalletModel, 'increment', async () => { throw error })
 
@@ -167,7 +169,7 @@ void describe('order', () => {
     }
     mock.method(BasketModel, 'findOne', async () => basket)
     mock.method(security.authenticatedUsers, 'from', () => ({ data: { email: 'test@juice-sh.op' } }))
-    req.body.orderDetails = { deliveryMethodId: 1 }
+    req.body.orderDetails = { paymentId: 1, deliveryMethodId: 1 }
     const error = new Error('Delivery error')
     mock.method(DeliveryModel, 'findOne', async () => { throw error })
 

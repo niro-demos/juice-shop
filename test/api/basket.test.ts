@@ -9,7 +9,7 @@ import request from 'supertest'
 import type { Express } from 'express'
 import config from 'config'
 import { createTestApp } from './helpers/setup'
-import { login } from './helpers/auth'
+import { login, register } from './helpers/auth'
 import { QuantityModel } from '../../models/quantity'
 import { WalletModel } from '../../models/wallet'
 import * as db from '../../data/mongodb'
@@ -21,6 +21,61 @@ let authHeader: { Authorization: string, 'content-type': string }
 const validCoupon = security.generateCoupon(15)
 const outdatedCoupon = security.generateCoupon(20, new Date(2001, 0, 1))
 const forgedCoupon = security.generateCoupon(99)
+
+function z85Encode (text: string) {
+  const alphabet = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?&<>()[]{}@%$#'
+  const input = Buffer.from(text)
+  let encoded = ''
+  for (let i = 0; i < input.length; i += 4) {
+    let value = 0
+    for (let j = 0; j < 4; j++) {
+      value = value * 256 + input[i + j]
+    }
+    const chunk = new Array<string>(5)
+    for (let j = 4; j >= 0; j--) {
+      chunk[j] = alphabet[value % 85]
+      value = Math.floor(value / 85)
+    }
+    encoded += chunk.join('')
+  }
+  return encoded
+}
+
+function couponPayload (discount: number, date = new Date()) {
+  return date.toLocaleString('en-US', { month: 'short' }).toUpperCase() + date.getFullYear().toString().slice(-2) + '-' + discount.toString().padStart(2, '0')
+}
+
+async function registerCustomerWithBasketItem () {
+  const email = `tc-8516750d-${Date.now()}-${Math.random().toString(16).slice(2)}@${config.get<string>('application.domain')}`
+  const password = 'TC-8516750D-test-pass-1!'
+  await register(app, { email, password })
+  const { token, bid: basketId } = await login(app, { email, password })
+  const customerAuthHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+
+  const itemRes = await request(app)
+    .post('/api/BasketItems')
+    .set(customerAuthHeader)
+    .send({ BasketId: basketId, ProductId: 4, quantity: 1 })
+
+  assert.equal(itemRes.status, 200)
+
+  return { authHeader: customerAuthHeader, basketId }
+}
+
+async function createPaymentCard (header: { Authorization: string, 'content-type': string }) {
+  const cardRes = await request(app)
+    .post('/api/Cards')
+    .set(header)
+    .send({
+      fullName: 'Payment Required',
+      cardNum: 4111111111111111,
+      expMonth: 12,
+      expYear: 2088
+    })
+
+  assert.equal(cardRes.status, 201)
+  return cardRes.body.data.id
+}
 
 before(
   async () => {
@@ -129,9 +184,34 @@ void describe('/rest/basket/:id/checkout', () => {
   })
 
   void it('POST placing an order for an existing basket returns orderId', async () => {
-    const res = await request(app).post('/rest/basket/1/checkout').set(authHeader)
+    const cardId = await createPaymentCard(authHeader)
+    const res = await request(app)
+      .post('/rest/basket/1/checkout')
+      .set(authHeader)
+      .send({ orderDetails: { paymentId: cardId } })
     assert.equal(res.status, 200)
     assert.ok(res.body.orderConfirmation !== undefined)
+  })
+
+  void it('POST checkout rejects orders without payment details', async () => {
+    const customer = await registerCustomerWithBasketItem()
+
+    const res = await request(app)
+      .post(`/rest/basket/${customer.basketId}/checkout`)
+      .set(customer.authHeader)
+      .send({})
+
+    assert.equal(res.status, 400)
+
+    const cardId = await createPaymentCard(customer.authHeader)
+
+    const paidRes = await request(app)
+      .post(`/rest/basket/${customer.basketId}/checkout`)
+      .set(customer.authHeader)
+      .send({ orderDetails: { paymentId: cardId } })
+
+    assert.equal(paidRes.status, 200)
+    assert.ok(paidRes.body.orderConfirmation !== undefined)
   })
 
   void it('POST placing an order for a non-existing basket fails', async () => {
@@ -147,7 +227,11 @@ void describe('/rest/basket/:id/checkout', () => {
       .send({ BasketId: 2, ProductId: 10, quantity: -100 })
     assert.equal(itemRes.status, 200)
 
-    const res = await request(app).post('/rest/basket/3/checkout').set(authHeader)
+    const cardId = await createPaymentCard(authHeader)
+    const res = await request(app)
+      .post('/rest/basket/3/checkout')
+      .set(authHeader)
+      .send({ orderDetails: { paymentId: cardId } })
     assert.equal(res.status, 200)
     assert.ok(res.body.orderConfirmation !== undefined)
   })
@@ -160,7 +244,11 @@ void describe('/rest/basket/:id/checkout', () => {
     assert.ok(couponRes.headers['content-type']?.includes('application/json'))
     assert.equal(couponRes.body.discount, 99)
 
-    const res = await request(app).post('/rest/basket/2/checkout').set(authHeader)
+    const cardId = await createPaymentCard(authHeader)
+    const res = await request(app)
+      .post('/rest/basket/2/checkout')
+      .set(authHeader)
+      .send({ orderDetails: { paymentId: cardId } })
     assert.equal(res.status, 200)
     assert.ok(res.body.orderConfirmation !== undefined)
   })
@@ -170,9 +258,13 @@ void describe('/rest/basket/:id/checkout', () => {
       const { token } = await login(app, { email: 'bjoern.kimminich@gmail.com', password: 'bW9jLmxpYW1nQGhjaW5pbW1pay5ucmVvamI=' })
       const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
       await request(app).post('/api/BasketItems').set(authHeader).send({ BasketId: 4, ProductId: 1, quantity: 1 })
+      const cardId = await createPaymentCard(authHeader)
 
       t.mock.method(QuantityModel, 'findOne', () => { throw new Error('Quantity error') })
-      const res = await request(app).post('/rest/basket/4/checkout').set(authHeader)
+      const res = await request(app)
+        .post('/rest/basket/4/checkout')
+        .set(authHeader)
+        .send({ orderDetails: { paymentId: cardId } })
       assert.equal(res.status, 500)
       assert.match(res.text, /Quantity error/)
     })
@@ -192,9 +284,13 @@ void describe('/rest/basket/:id/checkout', () => {
       const { token } = await login(app, { email: 'admin@' + config.get<string>('application.domain'), password: 'admin123' })
       const authHeader = { Authorization: 'Bearer ' + token, 'content-type': 'application/json' }
       await request(app).post('/api/BasketItems').set(authHeader).send({ BasketId: 1, ProductId: 1, quantity: 1 })
+      const cardId = await createPaymentCard(authHeader)
 
       t.mock.method(db.ordersCollection, 'insert', async () => { throw new Error('Insert error') })
-      const res = await request(app).post('/rest/basket/1/checkout').set(authHeader)
+      const res = await request(app)
+        .post('/rest/basket/1/checkout')
+        .set(authHeader)
+        .send({ orderDetails: { paymentId: cardId } })
       assert.equal(res.status, 500)
       assert.match(res.text, /Insert error/)
     })
@@ -209,6 +305,16 @@ void describe('/rest/basket/:id/coupon/:coupon', () => {
     assert.equal(res.status, 200)
     assert.ok(res.headers['content-type']?.includes('application/json'))
     assert.equal(res.body.discount, 15)
+  })
+
+  void it('PUT rejects structurally valid coupons that were not issued by the server', async () => {
+    const unissuedCoupon = z85Encode(couponPayload(99))
+
+    const res = await request(app)
+      .put('/rest/basket/1/coupon/' + encodeURIComponent(unissuedCoupon))
+      .set(authHeader)
+
+    assert.equal(res.status, 404)
   })
 
   void it('PUT apply invalid coupon is not accepted', async () => {
