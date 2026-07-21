@@ -62,12 +62,13 @@ void describe('/profile', () => {
     assert.ok(res.text.includes('Error: Blocked illegal activity'))
   })
 
-  void it('GET user profile renders evaluated SSTI payload for username containing valid expression', async () => {
+  void it('GET user profile renders SSTI-like usernames literally', async () => {
+    const payload = '#{7*7}'
     await request(app)
       .post('/profile')
       .set('Cookie', authHeader.Cookie)
       .type('form')
-      .send({ username: '#{7*7}' })
+      .send({ username: payload })
       .redirects(0)
 
     const res = await request(app)
@@ -76,7 +77,42 @@ void describe('/profile', () => {
 
     assert.equal(res.status, 200)
     assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes('>49<'))
+    assert.ok(!res.text.includes('>49<'))
+    assert.ok(res.text.includes(payload))
+  })
+
+  void it('GET user profile renders profile names as data instead of evaluating server-side expressions', async () => {
+    const literalName = 'NiroLiteralProfileName'
+    await request(app)
+      .post('/profile')
+      .set('Cookie', authHeader.Cookie)
+      .type('form')
+      .send({ username: literalName })
+      .redirects(0)
+
+    const literalRes = await request(app)
+      .get('/profile')
+      .set(authHeader)
+
+    assert.equal(literalRes.status, 200)
+    assert.ok(literalRes.text.includes(literalName))
+
+    const payload = '#{globalThis.process.version}'
+    await request(app)
+      .post('/profile')
+      .set('Cookie', authHeader.Cookie)
+      .type('form')
+      .send({ username: payload })
+      .redirects(0)
+
+    const res = await request(app)
+      .get('/profile')
+      .set(authHeader)
+
+    assert.equal(res.status, 200)
+    assert.ok(res.headers['content-type']?.includes('text/html'))
+    assert.ok(!res.text.includes(`>${process.version}<`))
+    assert.ok(res.text.includes(payload))
   })
 
   void it('GET user profile falls back gracefully when SSTI payload throws', async () => {
