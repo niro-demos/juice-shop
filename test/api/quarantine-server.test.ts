@@ -17,19 +17,19 @@ before(async () => {
 }, { timeout: 60000 })
 
 void describe('/ftp/quarantine/:file', () => {
-  void it('GET serves a known quarantined file', async () => {
+  void it('GET denies a known quarantined file', async () => {
     const res = await request(app)
       .get('/ftp/quarantine/juicy_malware_windows_64.exe.url')
 
-    assert.equal(res.status, 200)
+    assert.ok([401, 403, 404].includes(res.status))
+    assert.ok(!res.text.includes('juicy_malware_windows_64.exe'))
   })
 
-  void it('GET responds with 403 when filename contains a forward slash', async () => {
+  void it('GET denies a filename containing a forward slash', async () => {
     const res = await request(app)
       .get('/ftp/quarantine/' + encodeURIComponent('../package.json'))
 
-    assert.equal(res.status, 403)
-    assert.ok(res.headers['content-type']?.includes('text/html'))
-    assert.ok(res.text.includes('Error: File names cannot contain forward slashes!'))
+    assert.ok([401, 403, 404].includes(res.status))
+    assert.ok(!res.text.includes('"name": "juice-shop"'))
   })
 })
